@@ -46,11 +46,21 @@ DnsServerCore/www/js/ux.js
 
 ## Every change to an upstream file
 
-Nine changes across seven files. This is the entire conflict surface.
+Eleven hunks across nine files. This is the entire conflict surface, and it is
+worth re-deriving rather than trusting after a merge:
+
+```bash
+git fetch upstream
+git diff --stat upstream/master...HEAD -- . \
+    ':!FORK.md' ':!tools' ':!.github' \
+    ':!DnsServerCore/WebServiceZonesApiSearch.cs' \
+    ':!DnsServerCore/www/js/router.js' ':!DnsServerCore/www/js/search.js' \
+    ':!DnsServerCore/www/js/ux.js' ':!DnsServerCore/www/css/ux.css'
+```
 
 | File | Change |
 |---|---|
-| `DnsServerCore/www/index.html` | One `<link>` and three `<script>` tags in `<head>`. Nothing else — all fork markup is injected by `js/ux.js`. |
+| `DnsServerCore/www/index.html` | One `<link>` and three `<script>` tags in `<head>`, in two hunks. Nothing else — all fork markup is injected by `js/ux.js`. |
 | `DnsServerCore/www/js/auth.js` | The boot handler's `replaceState` gains `+ window.location.search`, so the query string survives startup. |
 | `DnsServerCore/www/js/main.js` | Two hunks in `showPageMain()`: guard the default `refreshZones(true)` so it does not race the routed view, and call `Router.start()` at the end. |
 | `DnsServerCore/WebServiceZonesApi.cs` | The word `partial` on the `WebServiceZonesApi` class declaration. |
@@ -58,6 +68,7 @@ Nine changes across seven files. This is the entire conflict surface.
 | `APIDOCS.md` | A new "Search Records" section. Pure insertion. |
 | `DnsServerCore/DnsServerCore.csproj` | Two `ItemGroup`s at the end of the file declaring the four fork assets. |
 | `docker-compose.yml` | `image:` repointed at this fork's GHCR image. |
+| `.gitignore` | `/node_modules/` and `/package-lock.json`, for the regression tests' jsdom install. |
 
 ## Syncing with upstream
 
@@ -68,8 +79,9 @@ git merge upstream/master        # or: git rebase upstream/master
 
 Conflicts should be rare and confined to the table above. After merging:
 
-1. Run the grep above and confirm all nine markers are still present and still
-   make sense.
+1. Run the grep above and confirm all nine `FORK` markers are still present and
+   still make sense. (Nine markers, eleven hunks: `.gitignore` and `APIDOCS.md`
+   carry additions rather than marked edits.)
 2. Check the anchors the fork depends on still exist. `js/ux.js` injects its
    markup next to these element ids, and `css/ux.css` targets tables by id:
 

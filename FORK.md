@@ -11,7 +11,7 @@ as mechanical to re-apply as possible.
 |---|---|
 | URL reflects the current view; refresh / bookmark / new tab restore it; browser back and forward work; the requested view survives an SSO login | `DnsServerCore/www/js/router.js` |
 | Global search across every zone's records, by name, record data or comment; type anywhere to open it, scoped to the zone on screen | `DnsServerCore/www/js/search.js` + `DnsServerCore/WebServiceZonesApiSearch.cs` |
-| Copy to clipboard, recent zones, copy link to this view, unsaved settings guard, working page size selects | `DnsServerCore/www/js/ux.js` |
+| Copy to clipboard, a row of the most used zones, copy link to this view, unsaved settings guard, working page size selects | `DnsServerCore/www/js/ux.js` |
 | Styling for all of the above, including dark and amber themes, plus sticky table headers | `DnsServerCore/www/css/ux.css` |
 
 ## Design rule

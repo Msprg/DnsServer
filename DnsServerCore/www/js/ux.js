@@ -33,10 +33,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 var UX = (function () {
     "use strict";
 
-    var RECENT_ZONES_KEY = "recentZones";
-    var RECENT_ZONES_MAX = 10;
+    var RECENT_ZONES_KEY = "recentZones"; //superseded by ZONE_USAGE_KEY; read once, to migrate
+    var ZONE_USAGE_KEY = "zoneUsage";
+    var ZONE_USAGE_MAX = 50; //entries kept in storage
+    var ZONE_CHIPS_MAX = 6; //chips offered; how many are actually shown is down to the width of the row
 
     var settingsDirty = false;
+    var lastCountedZone = null;
 
     // ----------------------------------------------------------- clipboard
 
@@ -127,17 +130,15 @@ var UX = (function () {
                 '<a href="#" id="lnkCopyViewLink" title="Copy a link to this view" style="margin-left: 8px;"><span class="glyphicon glyphicon-link" aria-hidden="true"></span></a>');
         }
 
-        //recent zones, in the zone list toolbar
-        var zonesToolbar = $("#optZonesClusterNode").closest(".form-inline");
+        //Most used zones, sharing the zone list's button row.
+        //
+        //Inserted after the buttons, not before: they are float:right, and the
+        //row's stylesheet relies on following that float so it is handed only
+        //the width the buttons leave over. See .frequent-zones in css/ux.css.
+        var zonesButtons = $("#optZonesClusterNode").closest(".pull-right");
 
-        if (zonesToolbar.length > 0) {
-            zonesToolbar.prepend(
-                '<div class="pull-left">' +
-                '<div class="form-group dropdown" style="margin-right: 0px;">' +
-                '<button type="button" class="btn btn-default dropdown-toggle" style="padding: 2px 10px;" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Recent Zones <span class="caret"></span></button>' +
-                '<ul id="ulRecentZones" class="dropdown-menu recent-zones-menu"></ul>' +
-                '</div></div>');
-        }
+        if (zonesButtons.length > 0)
+            zonesButtons.after('<div id="divFrequentZones" class="frequent-zones"></div>');
 
         //"search inside the zones instead" hint, above the zone table
         $('<div id="divZonesSearchHint" class="zones-search-hint" style="display: none;"></div>').insertBefore("#tableZones");
@@ -206,68 +207,180 @@ var UX = (function () {
         });
     }
 
-    // -------------------------------------------------------- recent zones
+    // ----------------------------------------------------- most used zones
 
-    function readRecentZones() {
+    //{ "example.com": { n: <times opened>, t: <last opened, ms> } }
+    function readZoneUsage() {
+        var usage = null;
+
         try {
-            var stored = localStorage.getItem(RECENT_ZONES_KEY);
-
-            if (stored == null)
-                return [];
-
-            var zones = JSON.parse(stored);
-
-            return Array.isArray(zones) ? zones : [];
+            usage = JSON.parse(localStorage.getItem(ZONE_USAGE_KEY));
         }
         catch (e) {
-            return [];
+            usage = null;
         }
+
+        if ((usage != null) && (typeof usage === "object") && !Array.isArray(usage))
+            return usage;
+
+        return migrateRecentZones();
+    }
+
+    //this row replaced a dropdown that kept a plain most-recent-first list;
+    //carry it over so the chips are useful immediately rather than in a week
+    function migrateRecentZones() {
+        var usage = {};
+
+        try {
+            var stored = JSON.parse(localStorage.getItem(RECENT_ZONES_KEY));
+
+            if (Array.isArray(stored)) {
+                for (var i = 0; i < stored.length; i++) {
+                    //ordinals, not real timestamps: every migrated zone should lose
+                    //a tie against one that has actually been opened since
+                    if ((typeof stored[i] === "string") && (stored[i] !== ""))
+                        usage[stored[i]] = { n: 1, t: stored.length - i };
+                }
+            }
+
+            localStorage.removeItem(RECENT_ZONES_KEY);
+            writeZoneUsage(usage);
+        }
+        catch (e) {
+            //nothing to carry over
+        }
+
+        return usage;
+    }
+
+    function writeZoneUsage(usage) {
+        try {
+            localStorage.setItem(ZONE_USAGE_KEY, JSON.stringify(usage));
+        }
+        catch (e) {
+            //storage full or disabled; the feature is optional
+        }
+    }
+
+    //Most used first, most recent breaking ties, name last so the order is
+    //never arbitrary. Ranking by count rather than by recency is what makes
+    //this row worth aiming at: it only reorders when one zone genuinely
+    //overtakes another, so a chip stays where the user last saw it.
+    function rankZones(usage) {
+        var names = [];
+
+        for (var name in usage) {
+            if ((usage[name] != null) && (usage[name].n > 0))
+                names.push(name);
+        }
+
+        names.sort(function (a, b) {
+            if (usage[b].n !== usage[a].n)
+                return usage[b].n - usage[a].n;
+
+            if (usage[b].t !== usage[a].t)
+                return (usage[b].t || 0) - (usage[a].t || 0);
+
+            return a.localeCompare(b);
+        });
+
+        return names;
+    }
+
+    function pruneZoneUsage(usage) {
+        var names = rankZones(usage);
+
+        if (names.length <= ZONE_USAGE_MAX)
+            return usage;
+
+        var pruned = {};
+
+        for (var i = 0; i < ZONE_USAGE_MAX; i++)
+            pruned[names[i]] = usage[names[i]];
+
+        return pruned;
     }
 
     function rememberZone(zone) {
         if ((zone == null) || (zone === ""))
             return;
 
-        var zones = readRecentZones();
-        var updated = [zone];
+        //showEditZonePage also fires on every page and filter change inside a
+        //zone, and counting those would make one long session look like heavy
+        //use. Cleared when the zone list comes back, so reopening counts again.
+        if (zone === lastCountedZone)
+            return;
 
-        for (var i = 0; (i < zones.length) && (updated.length < RECENT_ZONES_MAX); i++) {
-            if (zones[i] !== zone)
-                updated.push(zones[i]);
-        }
+        lastCountedZone = zone;
 
-        try {
-            localStorage.setItem(RECENT_ZONES_KEY, JSON.stringify(updated));
-        }
-        catch (e) {
-            //storage full or disabled; the feature is optional
-        }
+        var usage = readZoneUsage();
+        var entry = usage[zone];
 
-        renderRecentZones();
+        usage[zone] = { n: ((entry == null) || !(entry.n > 0)) ? 1 : entry.n + 1, t: Date.now() };
+
+        writeZoneUsage(pruneZoneUsage(usage));
+        renderZoneChips();
     }
 
-    function renderRecentZones() {
-        var menu = $("#ulRecentZones");
+    function forgetZone(zone) {
+        var usage = readZoneUsage();
 
-        if (menu.length === 0)
+        delete usage[zone];
+
+        if (zone === lastCountedZone)
+            lastCountedZone = null;
+
+        writeZoneUsage(usage);
+        renderZoneChips();
+    }
+
+    function renderZoneChips() {
+        var row = $("#divFrequentZones");
+
+        if (row.length === 0)
             return;
 
-        var zones = readRecentZones();
-
-        if (zones.length === 0) {
-            menu.html("<li class=\"disabled\"><a href=\"#\" onclick=\"return false;\">No zones visited yet</a></li>");
-            return;
-        }
-
+        var usage = readZoneUsage();
+        var names = rankZones(usage);
         var html = "";
 
-        for (var i = 0; i < zones.length; i++)
-            html += "<li><a href=\"#\" onclick=\"UX.openRecentZone(" + JSON.stringify(zones[i]).replace(/"/g, "&quot;") + "); return false;\">" + htmlEncode(zones[i]) + "</a></li>";
+        //How many of these are actually visible is left to the stylesheet: the
+        //cluster node selector beside the buttons is up to 250px wide and only
+        //present on a cluster, so there is no fixed number that is right. The
+        //row is one chip tall and clips whatever wraps past it.
+        for (var i = 0; (i < names.length) && (i < ZONE_CHIPS_MAX); i++) {
+            var times = usage[names[i]].n;
 
-        html += "<li role=\"separator\" class=\"divider\"></li>";
-        html += "<li><a href=\"#\" onclick=\"UX.clearRecentZones(); return false;\">Clear list</a></li>";
+            html += "<span class=\"zone-chip\">" +
+                "<a href=\"#\" class=\"zone-chip-open\" data-zone=\"" + htmlEncode(names[i]) + "\" title=\"" + htmlEncode(names[i]) + " &mdash; opened " + times + (times === 1 ? " time" : " times") + "\">" + htmlEncode(names[i]) + "</a>" +
+                "<a href=\"#\" class=\"zone-chip-forget\" data-zone=\"" + htmlEncode(names[i]) + "\" title=\"Remove " + htmlEncode(names[i]) + " from this row\">&times;</a>" +
+                "</span>";
+        }
 
-        menu.html(html);
+        row.html(html);
+    }
+
+    function initZoneChips() {
+        $(document).on("click", ".zone-chip-open", function (e) {
+            e.preventDefault();
+            openZone($(this).attr("data-zone"));
+        });
+
+        $(document).on("click", ".zone-chip-forget", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            forgetZone($(this).attr("data-zone"));
+        });
+
+        renderZoneChips();
+    }
+
+    function openZone(zone) {
+        if (!$("#mainPanelTabListZones").is(":visible"))
+            return;
+
+        $("#mainPanelTabListZones").children("a").first().tab("show");
+        showEditZone(zone, 1, "", "");
     }
 
     // ---------------------------------------------------- remembered sizes
@@ -412,8 +525,7 @@ var UX = (function () {
         initSettingsGuard();
         initCopyLink();
         initZonesSearchHint();
-
-        renderRecentZones();
+        initZoneChips();
 
         //showEditZonePage runs once the zone's records are in, so the zone name
         //it reads has already been normalised by the server
@@ -433,29 +545,40 @@ var UX = (function () {
                 return result;
             };
         }
+
+        //back on the zone list, so the visit is over and reopening the same
+        //zone is a new one
+        var originalRefreshZones = window.refreshZones;
+
+        if (typeof originalRefreshZones === "function") {
+            window.refreshZones = function () {
+                lastCountedZone = null;
+
+                return originalRefreshZones.apply(this, arguments);
+            };
+        }
     }
 
     return {
         init: init,
         copyText: copyText,
+        openZone: openZone,
 
-        openRecentZone: function (zone) {
-            if (!$("#mainPanelTabListZones").is(":visible"))
-                return;
-
-            $("#mainPanelTabListZones").children("a").first().tab("show");
-            showEditZone(zone, 1, "", "");
+        //exposed for the regression tests and for anyone wanting to reset the row
+        zoneUsage: function () {
+            return rankZones(readZoneUsage());
         },
 
-        clearRecentZones: function () {
+        forgetAllZones: function () {
             try {
+                localStorage.removeItem(ZONE_USAGE_KEY);
                 localStorage.removeItem(RECENT_ZONES_KEY);
             }
             catch (e) {
                 //optional
             }
 
-            renderRecentZones();
+            renderZoneChips();
         }
     };
 })();

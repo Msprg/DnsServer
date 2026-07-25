@@ -82,7 +82,7 @@ html_ids = set(re.findall(r'\bid="([^"]+)"', html))
 print("\nDOM anchors the fork injects markup next to")
 for anchor in [
     "lnkUpdateAvailable",            # global search box + copy-link button
-    "optZonesClusterNode",           # recent zones dropdown
+    "optZonesClusterNode",           # anchors the most-used-zones row on the button row
     "tableZones",                    # zones search hint
     "lblCreateApiTokenOutputToken",  # copy button
     "btnDeleteCachedZone",           # copy button

@@ -230,15 +230,85 @@ body.amber-mode {
 
 /* ------------------------------------------------------------------ recent zones */
 
-.recent-zones-menu {
-    max-height: 320px;
-    overflow-y: auto;
+/* ------------------------------------------------------------ most used zones */
+
+/* Shares the zone list's button row. The buttons beside it are float:right and
+   come first in the markup; "overflow: hidden" makes this a block formatting
+   context, which the spec then requires not to overlap that float - so the row
+   is handed exactly the width the buttons leave over, at any window size. The
+   same trick as the classic media object.
+
+   How many chips that works out to is not a number worth hard coding: the
+   cluster node selector next to the buttons is up to 250px wide and only there
+   on a cluster, and zone names are any length. So the chips simply wrap, and
+   the row is one chip tall with whatever wrapped clipped off - whatever fits,
+   fits, with nothing to measure and nothing to keep in sync.
+
+   font-size 0 kills the whitespace between inline-blocks; the chips set their
+   own back. */
+.frequent-zones {
+    overflow: hidden;
+    max-height: 30px;
+    font-size: 0;
+    line-height: 0;
 }
 
-    .recent-zones-menu > li > a {
-        font-family: monospace;
-        font-size: 12px;
-        word-break: break-all;
+.zone-chip {
+    display: inline-block;
+    vertical-align: top;
+    max-width: 180px;
+    height: 26px;
+    margin: 0 6px 6px 0;
+    border: 1px solid #ccc;
+    border-radius: 13px;
+    background-color: #f7f7f7;
+    white-space: nowrap;
+}
+
+    .zone-chip:hover {
+        border-color: #adadad;
+        background-color: #eee;
+    }
+
+.zone-chip-open {
+    display: inline-block;
+    vertical-align: top;
+    max-width: 152px; /* leaves room for the dismiss inside the chip's own max-width */
+    overflow: hidden;
+    padding: 0 4px 0 10px;
+    font-size: 12px;
+    line-height: 24px;
+    color: #333;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+    .zone-chip-open:hover,
+    .zone-chip-open:focus {
+        color: #337ab7;
+        text-decoration: none;
+    }
+
+/* only on hover: this row is aimed at with the mouse, and a permanently
+   visible dismiss next to the name invites the wrong click */
+.zone-chip-forget {
+    display: inline-block;
+    vertical-align: top;
+    padding: 0 8px 0 2px;
+    font-size: 14px;
+    line-height: 24px;
+    color: #bbb;
+    visibility: hidden;
+}
+
+    .zone-chip:hover .zone-chip-forget {
+        visibility: visible;
+    }
+
+    .zone-chip-forget:hover,
+    .zone-chip-forget:focus {
+        color: #a94442;
+        text-decoration: none;
     }
 
 /* ------------------------------------------------------------------ dark mode */
@@ -263,6 +333,29 @@ body.dark-mode .global-search-group {
 
 body.dark-mode .global-search-group.global-search-scope a {
     color: #6cb2eb;
+}
+
+body.dark-mode .zone-chip {
+    border-color: #444;
+    background-color: #2c2c2e;
+}
+
+    body.dark-mode .zone-chip:hover {
+        border-color: #5a5a5c;
+        background-color: #3a3a3c;
+    }
+
+body.dark-mode .zone-chip-open {
+    color: #dcdcdc;
+}
+
+    body.dark-mode .zone-chip-open:hover,
+    body.dark-mode .zone-chip-open:focus {
+        color: #6cb2eb;
+    }
+
+body.dark-mode .zone-chip-forget {
+    color: #777;
 }
 
 body.dark-mode .global-search-item {
@@ -332,6 +425,29 @@ body.amber-mode .global-search-group {
 body.amber-mode .global-search-group.global-search-scope a {
     color: #ffb000;
     text-decoration: underline;
+}
+
+body.amber-mode .zone-chip {
+    border-color: #4a3620;
+    background-color: #241a10;
+}
+
+    body.amber-mode .zone-chip:hover {
+        border-color: #6b4d2e;
+        background-color: #31220f;
+    }
+
+body.amber-mode .zone-chip-open {
+    color: #ffb000;
+}
+
+    body.amber-mode .zone-chip-open:hover,
+    body.amber-mode .zone-chip-open:focus {
+        color: #ffcc55;
+    }
+
+body.amber-mode .zone-chip-forget {
+    color: #8a6a3c;
 }
 
 body.amber-mode .global-search-item {

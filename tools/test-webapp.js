@@ -452,6 +452,65 @@ console.log("\nArrows highlight a result and enter opens it");
         w.$("#divGlobalSearchResults").is(":visible"), false);
 }
 
+console.log("\nThe zone row ranks by how often a zone is opened");
+{
+    const w = await bootReady();
+    startRouter(w);
+
+    // opening a zone, paging inside it, and filtering it is one visit, not four
+    const visit = (zone) => {
+        w.showEditZone(zone, 1, "", "");
+        deliver(w);
+        w.showEditZonePage(2);
+        w.showEditZonePage(3);
+        w.refreshZones(false, 1);
+        deliver(w);
+    };
+
+    // the quiet zone is visited last, so ranking by recency and ranking by use
+    // disagree here - which is the whole point of the row
+    visit("busy.example");
+    visit("busy.example");
+    visit("busy.example");
+    visit("quiet.example");
+
+    check("the most opened zone leads, not the most recent one",
+        w.UX.zoneUsage().join(","), "busy.example,quiet.example");
+    check("paging inside a zone is not counted as reopening it",
+        JSON.parse(w.localStorage.getItem("zoneUsage"))["busy.example"].n, 3);
+
+    check("a chip per zone", w.$("#divFrequentZones .zone-chip").length, 2);
+    check("leader first", w.$("#divFrequentZones .zone-chip-open").first().attr("data-zone"), "busy.example");
+
+    // the chips sit on the button row, after the buttons so they yield to them
+    check("the row is on the buttons' row",
+        w.$("#divFrequentZones").prev().hasClass("pull-right"), true);
+
+    w.$("#divFrequentZones .zone-chip-forget").first()[0].click();
+    check("a zone can be dropped from the row", w.UX.zoneUsage().join(","), "quiet.example");
+    check("and the chip goes with it", w.$("#divFrequentZones .zone-chip").length, 1);
+
+    w.$("#divFrequentZones .zone-chip-open").first()[0].click();
+    deliver(w);
+    check("clicking a chip opens that zone", url(w), "/?t=zones&zone=quiet.example");
+}
+
+console.log("\nThe old recent-zones list is carried over, not thrown away");
+{
+    const w = await bootReady("/", (win) =>
+        win.localStorage.setItem("recentZones", JSON.stringify(["newest.example", "older.example"])));
+
+    check("the previous list becomes the starting order",
+        w.UX.zoneUsage().join(","), "newest.example,older.example");
+    check("and is not migrated a second time", w.localStorage.getItem("recentZones"), null);
+
+    // a zone opened once now outranks anything only carried over
+    startRouter(w);
+    w.showEditZone("older.example", 1, "", "");
+    deliver(w);
+    check("a real visit beats a migrated entry", w.UX.zoneUsage()[0], "older.example");
+}
+
 console.log("\nBack and forward");
 {
     const w = await bootReady();

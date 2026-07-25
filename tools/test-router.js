@@ -36,7 +36,7 @@ function check(name, actual, expected) {
 
 // --------------------------------------------------------------- environment
 
-function boot(startUrl) {
+function boot(startUrl, seed) {
     const virtualConsole = new VirtualConsole();
     virtualConsole.on("jsdomError", () => {});   // css parse noise from bootstrap
     if (process.env.ROUTER_TEST_VERBOSE) {
@@ -150,6 +150,12 @@ function boot(startUrl) {
         }
     `);
 
+    // each JSDOM gets its own sessionStorage and cookie jar, so a cross
+    // navigation round trip (the SSO flow) has to be staged by hand here,
+    // before router.js is evaluated and reads either of them
+    if (seed != null)
+        seed(window);
+
     evaluate("router.js");
     evaluate("ux.js");
     evaluate("search.js");
@@ -164,8 +170,8 @@ function tick(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms || 0));
 }
 
-async function bootReady(startUrl) {
-    const window = boot(startUrl);
+async function bootReady(startUrl, seed) {
+    const window = boot(startUrl, seed);
 
     for (let i = 0; i < 200 && !window.jQuery.isReady; i++)
         await tick(5);
@@ -278,6 +284,47 @@ console.log("\nCopy-link reports the same URL the address bar shows");
     w.showEditZone("example.com", 1, "", "");
     deliver(w);
     check("Router.url() matches", w.Router.url(), "http://localhost:5380/?t=zones&zone=example.com");
+}
+
+console.log("\nAn SSO round trip comes back to the requested view");
+{
+    // the deep link that put the login page on screen
+    const w1 = await bootReady("/?t=zones&zone=example.com&p=2");
+    const parked = w1.sessionStorage.getItem("routerReturnTo");
+    check("the route is parked before the browser leaves for the provider",
+        parked != null, true);
+
+    // /sso/login -> provider -> /sso/callback -> Location: "/" + token cookie
+    const w2 = await bootReady("/", (w) => {
+        w.sessionStorage.setItem("routerReturnTo", parked);
+        w.document.cookie = "token=abc123";
+    });
+    check("the router has a route to restore", w2.Router.hasPendingRoute(), true);
+
+    startRouter(w2);
+    deliver(w2);
+    check("landed back on the zone", url(w2), "/?t=zones&zone=example.com&p=2");
+    check("the zone editor is showing", w2.$("#divEditZone").is(":visible"), true);
+}
+
+console.log("\nA parked route is spent once and never hijacks a plain visit");
+{
+    // same tab, no token cookie: the user just typed the console URL
+    const stale = JSON.stringify({ q: "?t=zones&zone=example.com", at: Date.now() });
+    const w1 = await bootReady("/", (w) => w.sessionStorage.setItem("routerReturnTo", stale));
+    check("no route restored without an SSO return", w1.Router.hasPendingRoute(), false);
+    startRouter(w1);
+    check("lands on the default tab", url(w1), "/?t=dashboard");
+
+    // an SSO return with an expired entry gets the default tab too
+    const expired = JSON.stringify({ q: "?t=zones&zone=example.com", at: Date.now() - (31 * 60 * 1000) });
+    const w2 = await bootReady("/", (w) => {
+        w.sessionStorage.setItem("routerReturnTo", expired);
+        w.document.cookie = "token=abc123";
+    });
+    check("an expired parked route is ignored", w2.Router.hasPendingRoute(), false);
+    check("and is cleared rather than left to rot",
+        w2.sessionStorage.getItem("routerReturnTo"), null);
 }
 
 console.log("\nBack and forward");

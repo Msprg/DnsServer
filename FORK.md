@@ -9,7 +9,7 @@ as mechanical to re-apply as possible.
 
 | Feature | Where |
 |---|---|
-| URL reflects the current view; refresh / bookmark / new tab restore it; browser back and forward work | `DnsServerCore/www/js/router.js` |
+| URL reflects the current view; refresh / bookmark / new tab restore it; browser back and forward work; the requested view survives an SSO login | `DnsServerCore/www/js/router.js` |
 | Global search across every zone's records, by name, record data or comment | `DnsServerCore/www/js/search.js` + `DnsServerCore/WebServiceZonesApiSearch.cs` |
 | Copy to clipboard, recent zones, copy link to this view, unsaved settings guard, working page size selects | `DnsServerCore/www/js/ux.js` |
 | Styling for all of the above, including dark and amber themes, plus sticky table headers | `DnsServerCore/www/css/ux.css` |
@@ -85,6 +85,12 @@ Conflicts should be rare and confined to the table above. After merging:
    `refreshCachedZonesList`, `refreshAllowedZonesList`, `refreshBlockedZonesList`,
    `resolveQuery`, `viewLog`, `queryLogs`, `showEditDhcpScope`,
    `refreshDhcpScopes`, `loadDnsSettings`, `showPageLogin`.
+
+   Also check that `SsoLoginFinalizeAsync` in `WebServiceAuthApi.cs` still ends
+   by setting a `token` cookie and redirecting to `/`. `js/router.js` treats
+   that cookie as the signal that a page load is the tail of an SSO round trip.
+   If upstream ever carries the return URL through the flow itself, the
+   sessionStorage hand-off in `router.js` becomes redundant and should go.
 4. If upstream adds a main tab or a sub-tab, add it to `MAIN_TABS` / `SUB_TABS`
    in `js/router.js` so it becomes routable.
 5. If you add a new file under `www/`, declare it in `DnsServerCore.csproj`.
@@ -99,6 +105,10 @@ and the fork's own scripts into jsdom and drives the same call sequences the
 console does. It exists because the static checks cannot see a URL that is
 written correctly and then overwritten a moment later by an async callback that
 misreads the DOM - which is exactly how the zone parameters were once lost.
+
+It also stages the SSO round trip by hand: one jsdom window for the login page,
+a second one seeded with the first one's `sessionStorage` and a `token` cookie,
+standing in for the browser's trip out to the identity provider and back.
 
 ```bash
 npm install --no-save jsdom@22

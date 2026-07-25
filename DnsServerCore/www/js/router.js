@@ -203,8 +203,8 @@ var Router = (function () {
 
     // -------------------------------------------------------------- url <-> state
 
-    function parseUrl() {
-        var params = new URLSearchParams(window.location.search);
+    function parseSearch(search) {
+        var params = new URLSearchParams(search);
         var t = params.get("t");
 
         if ((t == null) || (t === ""))
@@ -218,6 +218,10 @@ var Router = (function () {
         });
 
         return state;
+    }
+
+    function parseUrl() {
+        return parseSearch(window.location.search);
     }
 
     function buildUrl(state) {
@@ -273,11 +277,88 @@ var Router = (function () {
         return key;
     }
 
+    // ------------------------------------------------- surviving an SSO login
+
+    //The built in login form is an XHR: the page never navigates, so the route
+    //captured when this file was evaluated is still in memory by the time
+    //showPageMain() runs. Single sign-on is not. Clicking "OpenID Connect"
+    //navigates to /sso/login, the provider bounces the browser around, and the
+    //callback hands back a token cookie with a hard coded Location of "/".
+    //Every trace of the requested view is gone by then.
+    //
+    //So the route is parked in sessionStorage, which is scoped to this tab and
+    //this origin and therefore survives the trip out to the provider and back.
+    var RETURN_TO_KEY = "routerReturnTo";
+    var RETURN_TO_MAX_AGE = 30 * 60 * 1000;
+
+    function stashReturnTo(state) {
+        if ((state == null) || (state.t == null))
+            return;
+
+        var url = buildUrl(state);
+        var query = url.indexOf("?");
+
+        if (query < 0)
+            return;
+
+        try {
+            window.sessionStorage.setItem(RETURN_TO_KEY, JSON.stringify({ q: url.substring(query), at: Date.now() }));
+        }
+        catch (e) {
+            //storage unavailable or full; SSO logins just land on the default tab
+        }
+    }
+
+    //True when this page load is the tail of an SSO round trip. The callback
+    //sets a short lived "token" cookie and js/auth.js deletes it the moment it
+    //has read it - but that happens in a ready handler, and this file is
+    //evaluated before any of those run.
+    //
+    //Without this check a stale entry would hijack someone who simply typed the
+    //bare console URL into the address bar of a tab they had used earlier.
+    function isSsoReturn() {
+        return /(?:^|;\s*)token=/.test(document.cookie);
+    }
+
+    function takeReturnTo() {
+        var raw;
+
+        try {
+            raw = window.sessionStorage.getItem(RETURN_TO_KEY);
+            window.sessionStorage.removeItem(RETURN_TO_KEY); //spent, whatever happens next
+        }
+        catch (e) {
+            return null;
+        }
+
+        if (raw == null)
+            return null;
+
+        try {
+            var parked = JSON.parse(raw);
+
+            if ((parked == null) || (parked.q == null) || !(parked.at > 0))
+                return null;
+
+            if ((Date.now() - parked.at) > RETURN_TO_MAX_AGE)
+                return null;
+
+            return parseSearch(parked.q);
+        }
+        catch (e) {
+            return null;
+        }
+    }
+
     // ------------------------------------------------------------- recording
 
     function record(state, forceReplace) {
         if (!started || (suppressDepth > 0) || (state == null))
             return;
+
+        //parked before the early return below: the view being re-recorded is
+        //still the one an SSO login from this tab should come back to
+        stashReturnTo(state);
 
         var url = buildUrl(state);
 
@@ -760,6 +841,9 @@ var Router = (function () {
                     pendingState = currentState == null ? parseUrl() : currentState;
                     started = false;
                     currentState = null;
+
+                    //logging back in may go via SSO, which loses the page
+                    stashReturnTo(pendingState);
                 }
 
                 return originalShowPageLogin.apply(this, arguments);
@@ -938,8 +1022,14 @@ var Router = (function () {
     // ----------------------------------------------------------------- public
 
     //captured while this file is being evaluated, i.e. before any $(document).ready
-    //handler gets a chance to rewrite the address bar
+    //handler gets a chance to rewrite the address bar, and before js/auth.js
+    //consumes the SSO token cookie
     var pendingState = parseUrl();
+
+    if (pendingState == null)
+        pendingState = isSsoReturn() ? takeReturnTo() : null;
+    else
+        stashReturnTo(pendingState); //in case this deep link is about to be logged into with SSO
 
     return {
         //called once, on document ready, before the session is known

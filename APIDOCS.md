@@ -4053,6 +4053,70 @@ RESPONSE:
 }
 ```
 
+### Search Records
+
+Searches record owner names, record data and record comments across every authoritative zone that the signed in user is permitted to view. Zones whose own name matches are returned separately in `zones` so that a zone name hit does not bury the record hits.
+
+URL:\
+`http://localhost:5380/api/zones/records/search?q=192.168.1.10&scope=all&maxResults=100`
+
+PERMISSIONS:\
+Zones: View\
+Zone: View (each zone in the response is filtered by the user's permission for that zone)
+
+HEADERS:
+- Authorization: Bearer &lt;token&gt;
+
+PARAMETERS:
+- `token` (optional): The session token or API token. This parameter is optional when the `Authorization` header is used.
+- `q` (required): The text to search for. Supports the same wildcard syntax as the zone list filter: `abc` matches anywhere in the value, `a*` matches a prefix, `*b*` matches anywhere, and `a?c` matches any single character. Must not be empty.
+- `scope` (optional): What to match against. Valid values are [`name`, `value`, `all`]. `name` matches record owner names and zone names, `value` matches record data and record comments, `all` matches both. Default value is `all`.
+- `type` (optional): Limits the results to a single DNS resource record type, e.g. `A`, `CNAME`, `TXT`. When unspecified, all types are searched except the DNSSEC bookkeeping types (`RRSIG`, `NSEC`, `NSEC3`, `NSEC3PARAM`, `DNSKEY`), which are only included when explicitly requested with this parameter.
+- `zone` (optional): Limits the search to zones whose name matches this filter. Supports the same wildcard syntax as `q`.
+- `maxResults` (optional): The maximum number of records to return. Values are clamped to the range 1 to 1000. Default value is `100`.
+- `node` (optional): The name of the cluster node to search. When unspecified, the current node is searched.
+
+RESPONSE:
+```
+{
+	"response": {
+		"truncated": false,
+		"zonesSearched": 3,
+		"totalZones": 3,
+		"zones": [
+			{
+				"name": "example.com",
+				"type": "Primary",
+				"internal": false,
+				"dnssecStatus": "Unsigned",
+				"soaSerial": 12,
+				"disabled": false
+			}
+		],
+		"results": [
+			{
+				"zone": "example.com",
+				"zoneType": "Primary",
+				"record": {
+					"name": "www.example.com",
+					"type": "A",
+					"ttl": 3600,
+					"ttlString": "3600 (1 hour)",
+					"disabled": false,
+					"rData": {
+						"ipAddress": "192.168.1.10"
+					},
+					"lastUsedOn": "0001-01-01T00:00:00"
+				}
+			}
+		]
+	},
+	"status": "ok"
+}
+```
+
+`truncated` is `true` when `maxResults` was reached and more matches exist. `zonesSearched` is the number of zones actually scanned before the limit was hit, out of `totalZones` that the user is permitted to view.
+
 ## DNS Cache API Calls
 
 These API calls allow managing the DNS server cache.

@@ -2151,6 +2151,7 @@ namespace DnsServerCore
             _webService.MapGetAndPost("/api/zones/dnssec/properties/retireDnsKey", _zonesApi.RetirePrimaryZoneDnsKeyAsync);
             _webService.MapGetAndPost("/api/zones/records/add", _zonesApi.AddRecord);
             _webService.MapGetAndPost("/api/zones/records/get", _zonesApi.GetRecords);
+            _webService.MapGetAndPost("/api/zones/records/search", _zonesApi.SearchRecords); //FORK: see WebServiceZonesApiSearch.cs
             _webService.MapGetAndPost("/api/zones/records/update", _zonesApi.UpdateRecord);
             _webService.MapGetAndPost("/api/zones/records/delete", _zonesApi.DeleteRecord);
 

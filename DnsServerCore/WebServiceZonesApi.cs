@@ -41,7 +41,7 @@ namespace DnsServerCore
 {
     public partial class DnsWebService
     {
-        class WebServiceZonesApi
+        partial class WebServiceZonesApi //FORK: "partial" added so WebServiceZonesApiSearch.cs can extend this class
         {
             #region variables
 

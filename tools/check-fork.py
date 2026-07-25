@@ -92,6 +92,9 @@ for anchor in [
     "preLogViewerBody",              # copy target
     "tableDnssecViewDsBody",         # DS click-to-copy
     "divDnssecViewDsAlert",          # DS copy confirmation
+    "pageMain",                      # type-to-search only arms once past the login page
+    "divEditZone",                   # type-to-search reads the zone in view from these two
+    "titleEditZone",
 ]:
     check(anchor in html_ids, "#" + anchor)
 

@@ -10,7 +10,7 @@ as mechanical to re-apply as possible.
 | Feature | Where |
 |---|---|
 | URL reflects the current view; refresh / bookmark / new tab restore it; browser back and forward work; the requested view survives an SSO login | `DnsServerCore/www/js/router.js` |
-| Global search across every zone's records, by name, record data or comment | `DnsServerCore/www/js/search.js` + `DnsServerCore/WebServiceZonesApiSearch.cs` |
+| Global search across every zone's records, by name, record data or comment; type anywhere to open it, scoped to the zone on screen | `DnsServerCore/www/js/search.js` + `DnsServerCore/WebServiceZonesApiSearch.cs` |
 | Copy to clipboard, recent zones, copy link to this view, unsaved settings guard, working page size selects | `DnsServerCore/www/js/ux.js` |
 | Styling for all of the above, including dark and amber themes, plus sticky table headers | `DnsServerCore/www/css/ux.css` |
 
@@ -98,9 +98,9 @@ Conflicts should be rare and confined to the table above. After merging:
    asset builds fine and then 404s at runtime. `tools/check-fork.py` checks
    this.
 
-### Router regression tests
+### Web console regression tests
 
-`tools/test-router.js` loads the real `index.html`, the real jQuery/Bootstrap
+`tools/test-webapp.js` loads the real `index.html`, the real jQuery/Bootstrap
 and the fork's own scripts into jsdom and drives the same call sequences the
 console does. It exists because the static checks cannot see a URL that is
 written correctly and then overwritten a moment later by an async callback that
@@ -110,9 +110,12 @@ It also stages the SSO round trip by hand: one jsdom window for the login page,
 a second one seeded with the first one's `sessionStorage` and a `token` cookie,
 standing in for the browser's trip out to the identity provider and back.
 
+The rest covers the search box's keyboard handling, where a wrong guard either
+silently swallows keystrokes or hijacks every field on the page.
+
 ```bash
 npm install --no-save jsdom@22
-node tools/test-router.js
+node tools/test-webapp.js
 ```
 
 Both this and the check below run in CI before the image is built.

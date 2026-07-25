@@ -4073,6 +4073,7 @@ PARAMETERS:
 - `scope` (optional): What to match against. Valid values are [`name`, `value`, `all`]. `name` matches record owner names and zone names, `value` matches record data and record comments, `all` matches both. Default value is `all`.
 - `type` (optional): Limits the results to a single DNS resource record type, e.g. `A`, `CNAME`, `TXT`. When unspecified, all types are searched except the DNSSEC bookkeeping types (`RRSIG`, `NSEC`, `NSEC3`, `NSEC3PARAM`, `DNSKEY`), which are only included when explicitly requested with this parameter.
 - `zone` (optional): Limits the search to zones whose name matches this filter. Supports the same wildcard syntax as `q`.
+- `zoneExact` (optional): Set to `true` to treat `zone` as an exact zone name rather than a filter, matching one zone only. Use `.` for the root zone. Note that a `zone` filter with no wildcard in it is unanchored and so matches anywhere in a zone name, which means `example.com` also selects `myexample.com` and every sub zone of it; `zoneExact` is what the console's "search within this zone" uses. Default value is `false`.
 - `maxResults` (optional): The maximum number of records to return. Values are clamped to the range 1 to 1000. Default value is `100`.
 - `node` (optional): The name of the cluster node to search. When unspecified, the current node is searched.
 

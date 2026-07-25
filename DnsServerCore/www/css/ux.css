@@ -75,6 +75,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     border-bottom: 1px solid #e5e5e5;
 }
 
+/* the scope row shares the group heading's band, but it carries a zone name
+   and a way back out of it, so it keeps normal case and sits on one line */
+.global-search-group.global-search-scope {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 12px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+    .global-search-group.global-search-scope a {
+        margin-left: 10px;
+        font-weight: normal;
+        white-space: nowrap;
+    }
+
 .global-search-item {
     display: block;
     padding: 6px 10px;
@@ -244,6 +261,10 @@ body.dark-mode .global-search-group {
     border-bottom-color: #3a3a3c;
 }
 
+body.dark-mode .global-search-group.global-search-scope a {
+    color: #6cb2eb;
+}
+
 body.dark-mode .global-search-item {
     color: #dcdcdc;
     border-bottom-color: #3a3a3c;
@@ -306,6 +327,11 @@ body.amber-mode .global-search-group {
     color: #b3803c;
     background-color: #241a10;
     border-bottom-color: #4a3620;
+}
+
+body.amber-mode .global-search-group.global-search-scope a {
+    color: #ffb000;
+    text-decoration: underline;
 }
 
 body.amber-mode .global-search-item {

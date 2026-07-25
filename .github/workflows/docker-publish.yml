@@ -82,11 +82,11 @@ jobs:
 
       # Drives the real console in jsdom. The static checks above cannot see a
       # URL that is written correctly and then overwritten by a later callback.
-      - name: Router regression tests
+      - name: Web console regression tests
         run: |
           cd DnsServer
           npm install --no-save --silent jsdom@22
-          node tools/test-router.js
+          node tools/test-webapp.js
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4

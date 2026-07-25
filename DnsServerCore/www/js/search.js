@@ -26,6 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // already set to that record, which is what makes "find this one record"
 // a single step instead of a hunt through the zone list.
 //
+// Typing anywhere outside a field opens this box, and does so scoped to the
+// zone on screen when there is one, so "find that record" never starts with
+// aiming at a search box.
+//
 
 var GlobalSearch = (function () {
     "use strict";
@@ -33,11 +37,14 @@ var GlobalSearch = (function () {
     var MIN_QUERY_LENGTH = 2;
     var DEBOUNCE_MS = 300;
     var MAX_RESULTS = 50;
+    var DEFAULT_PLACEHOLDER = "Search zones & records...";
 
     var debounceHandle = null;
     var requestSequence = 0; //guards against an older response overwriting a newer one
     var lastQuery = null;
     var lastResponse = null;
+    var lastScope = null;
+    var activeScope = null; //zone the search is constrained to, or null for every zone
 
     function txtSearch() {
         return $("#txtGlobalSearch");
@@ -119,26 +126,61 @@ var GlobalSearch = (function () {
         return node == null ? "" : node;
     }
 
+    // ------------------------------------------------------------------ scope
+
+    //The zone editor's title carries the zone it is showing, and is only
+    //meaningful while that editor is the pane actually on screen. Read at the
+    //moment the box is opened rather than on every keystroke, so the scope
+    //cannot shift under a search that is already being typed.
+    function detectScope() {
+        if (!$("#divEditZone").is(":visible"))
+            return null;
+
+        var zone = $("#titleEditZone").attr("data-zone");
+
+        return (zone == null) ? null : zone;
+    }
+
+    function scopeLabel(zone) {
+        return (zone === "") ? "." : zone;
+    }
+
+    function setScope(scope) {
+        activeScope = scope;
+
+        txtSearch().attr("placeholder", (scope == null) ? DEFAULT_PLACEHOLDER : "Search in " + scopeLabel(scope) + "...");
+    }
+
+    //shown above the results so the constraint is never invisible, and so there
+    //is always one click back out to every zone
+    function scopeHeaderHtml(scope) {
+        return "<div class=\"global-search-group global-search-scope\">" +
+            "<span>In " + htmlEncode(scopeLabel(scope)) + "</span>" +
+            "<a href=\"#\" id=\"lnkGlobalSearchAllZones\">Search all zones</a>" +
+            "</div>";
+    }
+
     // -------------------------------------------------------------- rendering
 
-    function showStatus(message) {
-        divResults().html("<div class=\"global-search-status\">" + htmlEncode(message) + "</div>").show();
+    function showStatus(message, scope) {
+        divResults().html(((scope == null) ? "" : scopeHeaderHtml(scope)) +
+            "<div class=\"global-search-status\">" + htmlEncode(message) + "</div>").show();
     }
 
     function hide() {
         divResults().hide().empty();
     }
 
-    function render(response, query) {
+    function render(response, query, scope) {
         var zones = response.zones == null ? [] : response.zones;
         var results = response.results == null ? [] : response.results;
 
         if ((zones.length === 0) && (results.length === 0)) {
-            showStatus("No zones or records matched “" + query + "”.");
+            showStatus("No zones or records matched “" + query + "”" + ((scope == null) ? "." : " in " + scopeLabel(scope) + "."), scope);
             return;
         }
 
-        var html = "";
+        var html = (scope == null) ? "" : scopeHeaderHtml(scope);
 
         if (zones.length > 0) {
             html += "<div class=\"global-search-group\">Zones (" + zones.length + ")</div>";
@@ -169,7 +211,10 @@ var GlobalSearch = (function () {
                     " data-type=\"" + htmlEncode(record.type) + "\">" +
                     "<span class=\"global-search-type\">" + htmlEncode(record.type) + "</span>" +
                     "<span class=\"global-search-name\">" + highlight(htmlEncode(recordName), query) + "</span>" +
-                    "<div class=\"global-search-meta\">" + highlight(htmlEncode(rData), query) + " &middot; in " + htmlEncode(result.zone === "" ? "." : result.zone) + (record.disabled ? " &middot; disabled" : "") + "</div>" +
+                    "<div class=\"global-search-meta\">" + highlight(htmlEncode(rData), query) +
+                    //naming the zone on every row is noise when every row is in the same one
+                    ((scope == null) ? " &middot; in " + htmlEncode(result.zone === "" ? "." : result.zone) : "") +
+                    (record.disabled ? " &middot; disabled" : "") + "</div>" +
                     "</a>";
             }
         }
@@ -184,24 +229,31 @@ var GlobalSearch = (function () {
 
     function search(query) {
         var sequence = ++requestSequence;
+        var scope = activeScope; //pinned to this request, so a late response cannot render under a different scope
 
         lastQuery = query;
+        lastScope = scope;
+
+        var url = "api/zones/records/search?q=" + encodeURIComponent(query) + "&scope=all&maxResults=" + MAX_RESULTS + "&node=" + encodeURIComponent(currentNode());
+
+        if (scope != null)
+            url += "&zone=" + encodeURIComponent(scopeLabel(scope)) + "&zoneExact=true";
 
         HTTPRequest({
-            url: "api/zones/records/search?q=" + encodeURIComponent(query) + "&scope=all&maxResults=" + MAX_RESULTS + "&node=" + encodeURIComponent(currentNode()),
+            url: url,
             token: sessionData.token,
             success: function (responseJSON) {
                 if (sequence !== requestSequence)
                     return; //a newer search has already been issued
 
                 lastResponse = responseJSON.response;
-                render(responseJSON.response, query);
+                render(responseJSON.response, query, scope);
             },
             error: function () {
                 if (sequence !== requestSequence)
                     return;
 
-                showStatus("Search failed. The server may be running a build without the record search API.");
+                showStatus("Search failed. The server may be running a build without the record search API.", scope);
             },
             invalidToken: function () {
                 showPageLogin();
@@ -209,7 +261,7 @@ var GlobalSearch = (function () {
             dontHideAlert: true
         });
 
-        showStatus("Searching…");
+        showStatus("Searching…", scope);
     }
 
     function scheduleSearch() {
@@ -224,7 +276,14 @@ var GlobalSearch = (function () {
 
         if (query.length < MIN_QUERY_LENGTH) {
             requestSequence++; //discard anything still in flight
-            hide();
+
+            //typing the first character has to acknowledge itself, otherwise
+            //type-to-search looks like it swallowed the keystroke
+            if (query.length > 0)
+                showStatus("Keep typing to search…", activeScope);
+            else
+                hide();
+
             return;
         }
 
@@ -290,6 +349,67 @@ var GlobalSearch = (function () {
             container.scrollTop = element.offsetTop + element.offsetHeight - container.clientHeight;
     }
 
+    // -------------------------------------------------------- type to search
+
+    function isTypingTarget(target) {
+        if (target == null)
+            return false;
+
+        var tag = (target.tagName == null) ? "" : target.tagName.toLowerCase();
+
+        return (tag === "input") || (tag === "textarea") || (tag === "select") || (target.isContentEditable === true);
+    }
+
+    //Typing anywhere that is not a field goes to the search box, the way it
+    //does in a file manager.
+    //
+    //Note that this deliberately does not route into the Cached/Allowed/Blocked
+    //domain boxes, tempting as that is: Enter in the Allowed and Blocked ones
+    //adds the domain to the list with no confirmation, whereas Enter here means
+    //"open the highlighted result". Sending stray keystrokes somewhere that
+    //Enter has a destructive meaning is not worth the consistency.
+    function initTypeToSearch() {
+        $(document).on("keydown", function (e) {
+            if (e.ctrlKey || e.metaKey || e.altKey)
+                return;
+
+            if (isTypingTarget(e.target))
+                return;
+
+            //not on the login page, and not while a dialog has the user's attention
+            if (!$("#pageMain").is(":visible") || $("body").hasClass("modal-open"))
+                return;
+
+            var input = txtSearch();
+
+            if (input.length === 0)
+                return;
+
+            var seed;
+
+            if (e.key === "/")
+                seed = ""; //the usual "just focus the search" key
+            else if ((typeof e.key === "string") && (e.key.length === 1) && !/\s/.test(e.key))
+                seed = e.key;
+            else
+                return;
+
+            e.preventDefault(); //or the browser types the character in as well, giving "ww" for one "w"
+
+            setScope(detectScope());
+
+            input.val(seed);
+            input.trigger("focus");
+
+            //some browsers select the whole value when an input takes focus, which
+            //would make the next keystroke replace the one that opened the box
+            if (typeof input[0].setSelectionRange === "function")
+                input[0].setSelectionRange(seed.length, seed.length);
+
+            scheduleSearch();
+        });
+    }
+
     // ------------------------------------------------------------------- init
 
     function init() {
@@ -301,8 +421,14 @@ var GlobalSearch = (function () {
         input.on("input", scheduleSearch);
 
         input.on("focus", function () {
+            //an empty box is a fresh search, so it picks up wherever the user is now
+            if (input.val() === "") {
+                setScope(detectScope());
+                return;
+            }
+
             if ((lastResponse != null) && (input.val().trim() === lastQuery) && (lastQuery != null) && (lastQuery.length >= MIN_QUERY_LENGTH))
-                render(lastResponse, lastQuery);
+                render(lastResponse, lastQuery, lastScope);
         });
 
         input.on("keydown", function (e) {
@@ -353,6 +479,16 @@ var GlobalSearch = (function () {
             openResult($(this));
         });
 
+        divResults().on("click", "#lnkGlobalSearchAllZones", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            setScope(null);
+            lastResponse = null; //scoped results, no longer what is being asked for
+            scheduleSearch();
+            input.trigger("focus");
+        });
+
         divResults().on("mouseenter", ".global-search-item", function () {
             divResults().find(".global-search-item").removeClass("active");
             $(this).addClass("active");
@@ -363,6 +499,8 @@ var GlobalSearch = (function () {
             if ($(e.target).closest("#divGlobalSearch").length === 0)
                 hide();
         });
+
+        initTypeToSearch();
     }
 
     return {
@@ -375,6 +513,8 @@ var GlobalSearch = (function () {
             if (input.length === 0)
                 return;
 
+            setScope(detectScope());
+
             input.val(query);
             input.trigger("focus");
             scheduleSearch();
@@ -384,6 +524,8 @@ var GlobalSearch = (function () {
             requestSequence++;
             lastQuery = null;
             lastResponse = null;
+            lastScope = null;
+            setScope(null);
             txtSearch().val("");
             $("#lnkGlobalSearchClear").hide();
             hide();

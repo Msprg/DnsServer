@@ -79,6 +79,7 @@ namespace DnsServerCore
 
                 DnsResourceRecordType filterType = request.GetQueryOrFormEnum("type", DnsResourceRecordType.Unknown);
                 string filterZone = request.GetQueryOrForm("zone", null);
+                bool filterZoneExact = request.GetQueryOrForm("zoneExact", bool.Parse, false);
 
                 int maxResults = request.GetQueryOrForm("maxResults", int.Parse, 100);
                 if (maxResults < 1)
@@ -87,7 +88,22 @@ namespace DnsServerCore
                     maxResults = 1000;
 
                 Regex queryRegex = CreateWildcardRegex(query);
-                Regex zoneRegex = string.IsNullOrEmpty(filterZone) ? null : CreateWildcardRegex(filterZone);
+
+                //Constraining a search to one specific zone is not expressible in the
+                //wildcard syntax: a pattern with no wildcard is deliberately left
+                //unanchored, so "example.com" also matches "myexample.com" and every
+                //sub zone of it. The console's "search within this zone" needs exactly
+                //one zone, so it asks for an equality test instead.
+                string exactZone = null;
+                Regex zoneRegex = null;
+
+                if (!string.IsNullOrEmpty(filterZone))
+                {
+                    if (filterZoneExact)
+                        exactZone = (filterZone == ".") ? "" : filterZone.TrimEnd('.'); //"." is how the root zone is written in a URL
+                    else
+                        zoneRegex = CreateWildcardRegex(filterZone);
+                }
 
                 //DNSSEC bookkeeping records swamp the results and are never what a
                 //user is looking for, unless they explicitly asked for that type
@@ -112,6 +128,9 @@ namespace DnsServerCore
                 {
                     if (!_dnsWebService._authManager.IsPermitted(PermissionSection.Zones, zoneInfo.Name, sessionUser, PermissionFlag.View))
                         return false;
+
+                    if (exactZone is not null)
+                        return zoneInfo.Name.Equals(exactZone, StringComparison.OrdinalIgnoreCase);
 
                     if ((zoneRegex is not null) && !zoneRegex.IsMatch(zoneInfo.Name))
                         return false;

@@ -1,14 +1,17 @@
 /*
-Router regression tests.
+Web console regression tests.
 
 Loads the real index.html, the real jQuery/Bootstrap, and the fork's own
 router.js / ux.js / search.js into jsdom, stubs only the HTTP layer, and drives
-the same call sequences the console does. Catches the class of bug where the
-URL is written correctly and then overwritten a moment later by an async
-callback that misreads the DOM.
+the same call sequences the console does.
+
+Covers routing - including the class of bug where the URL is written correctly
+and then overwritten a moment later by an async callback that misreads the DOM
+- and the search box's keyboard handling, where a wrong guard silently either
+swallows the user's keystrokes or hijacks every field on the page.
 
     npm install jsdom@22
-    node tools/test-router.js
+    node tools/test-webapp.js
 
 Exit code is 0 when every test passes, 1 otherwise.
 */
@@ -189,6 +192,38 @@ function deliver(window) {
     while (queue.length) queue.shift().deliver();
 }
 
+// the search API is called with success/error rather than deliver
+function respond(window, responseJSON) {
+    const request = window.__pending.shift();
+    if (request == null) throw new Error("no request was issued");
+    request.success(responseJSON);
+    return request;
+}
+
+// A synthetic jQuery.Event is the only reliable way to drive jQuery's keydown
+// handlers here: jsdom builds KeyboardEvents with keyCode 0, so jQuery's
+// event.which would come out as 0 for every key.
+function press(window, props) {
+    window.jQuery(window.document).trigger(window.jQuery.Event("keydown", props));
+}
+
+function pressIn(window, selector, props) {
+    window.jQuery(selector).trigger(window.jQuery.Event("keydown", props));
+}
+
+// jsdom does not type for us, so the characters after the one that opened the
+// box have to be put in by hand, exactly as the browser would have
+function typeToSearch(window, text) {
+    press(window, { key: text.charAt(0) });
+
+    if (text.length > 1)
+        window.jQuery("#txtGlobalSearch").val(text).trigger("input");
+}
+
+function searchResponse(results) {
+    return { response: { truncated: false, zones: [], results: results } };
+}
+
 function url(window) {
     return window.location.pathname + window.location.search;
 }
@@ -325,6 +360,96 @@ console.log("\nA parked route is spent once and never hijacks a plain visit");
     check("an expired parked route is ignored", w2.Router.hasPendingRoute(), false);
     check("and is cleared rather than left to rot",
         w2.sessionStorage.getItem("routerReturnTo"), null);
+}
+
+console.log("\nTyping anywhere opens the search box");
+{
+    const w = await bootReady();
+    startRouter(w);
+
+    typeToSearch(w, "web");
+    check("the keystrokes land in the search box", w.$("#txtGlobalSearch").val(), "web");
+    check("and it has the focus", w.document.activeElement.id, "txtGlobalSearch");
+
+    await tick(400); // past the debounce
+    const request = w.__pending.shift();
+    check("a search was issued", request != null, true);
+    check("across every zone", /[?&]zone=/.test(request.url), false);
+}
+
+console.log("\nType to search keeps its hands off everything else");
+{
+    const w = await bootReady();
+    startRouter(w);
+
+    // a real field on the page: its own keystrokes are not ours to take
+    pressIn(w, "#txtZonesFilterName", { key: "w" });
+    check("typing in a field is left alone", w.$("#txtGlobalSearch").val(), "");
+
+    press(w, { key: "f", ctrlKey: true });
+    check("ctrl combinations are left to the browser", w.$("#txtGlobalSearch").val(), "");
+
+    press(w, { key: "Tab" });
+    check("named keys are not printable characters", w.$("#txtGlobalSearch").val(), "");
+
+    press(w, { key: "/" });
+    check("slash opens the box without seeding it", w.$("#txtGlobalSearch").val(), "");
+    check("but does focus it", w.document.activeElement.id, "txtGlobalSearch");
+}
+
+console.log("\nTyping inside a zone searches that zone");
+{
+    const w = await bootReady();
+    startRouter(w);
+    w.$("#mainPanelTabListZones").children("a").first()[0].click();
+    deliver(w);
+    w.showEditZone("example.com", 1, "", "");
+    deliver(w);
+
+    typeToSearch(w, "web");
+    check("the placeholder says where it is looking",
+        w.$("#txtGlobalSearch").attr("placeholder"), "Search in example.com...");
+
+    await tick(400);
+    const request = w.__pending.shift();
+    check("the search is pinned to this zone",
+        /[?&]zone=example\.com(&|$)/.test(request.url), true);
+    check("by equality, not by the wildcard filter",
+        /[?&]zoneExact=true(&|$)/.test(request.url), true);
+
+    // and back out to every zone, without leaving the keyboard's reach
+    w.$("#lnkGlobalSearchAllZones")[0].click();
+    await tick(400);
+    check("one click widens it again", /[?&]zone=/.test(w.__pending.shift().url), false);
+}
+
+console.log("\nArrows highlight a result and enter opens it");
+{
+    const w = await bootReady();
+    startRouter(w);
+
+    typeToSearch(w, "api");
+    await tick(400);
+
+    respond(w, searchResponse([
+        { zone: "example.com", zoneType: "Primary", record: { name: "api.example.com", type: "A", rData: { ipAddress: "10.0.0.1" } } },
+        { zone: "other.example", zoneType: "Primary", record: { name: "api.other.example", type: "A", rData: { ipAddress: "10.0.0.2" } } }
+    ]));
+    check("both results are listed", w.$(".global-search-item").length, 2);
+
+    pressIn(w, "#txtGlobalSearch", { which: 40 });
+    pressIn(w, "#txtGlobalSearch", { which: 40 });
+    check("the second result is highlighted",
+        w.$(".global-search-item.active").attr("data-zone"), "other.example");
+
+    pressIn(w, "#txtGlobalSearch", { which: 13 });
+    deliver(w);
+    check("enter opens it, filtered to that one record",
+        url(w), "/?t=zones&zone=other.example&fn=api&ft=A");
+
+    pressIn(w, "#txtGlobalSearch", { which: 38 });
+    check("the results are dismissed once one is taken",
+        w.$("#divGlobalSearchResults").is(":visible"), false);
 }
 
 console.log("\nBack and forward");

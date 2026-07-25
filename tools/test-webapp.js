@@ -115,6 +115,18 @@ function boot(startUrl, seed) {
         function refreshAdminSsoConfig() {}
         function refreshAdminCluster() {}
 
+        // the records a zone is loaded with; tests may replace this fixture
+        var editZoneRecords = null;
+        var editZoneFilteredRecords = null;
+
+        window.__zoneRecords = [
+            { name: "my.zone.com",      type: "A",     ttl: 3600, rData: { ipAddress: "10.0.0.7" }, comments: "" },
+            { name: "www.zone.com",     type: "A",     ttl: 3600, rData: { ipAddress: "10.0.0.8" }, comments: "public" },
+            { name: "zone.com",         type: "SOA",   ttl: 900,  rData: { primaryNameServer: "ns1.zone.com" }, comments: "" },
+            { name: "mail.zone.com",    type: "MX",    ttl: 3600, rData: { exchange: "mx.zone.com", preference: 10 }, comments: "" },
+            { name: "old.zone.com",     type: "CNAME", ttl: 300,  rData: { cname: "www.zone.com" }, comments: "retired" }
+        ];
+
         // Reproduces upstream showEditZone()'s ordering exactly: hide both
         // panes, fetch, then call showEditZonePage() BEFORE showing the editor.
         function showEditZone(zone, showPageNumber, filterName, filterType) {
@@ -132,14 +144,77 @@ function boot(startUrl, seed) {
                 $("#txtEditZoneFilterType").val(filterType);
                 $("#txtEditZonePageNumber").val(showPageNumber);
 
+                editZoneRecords = window.__zoneRecords;
+                editZoneFilteredRecords = null;
+
                 showEditZonePage(showPageNumber);      // editor still hidden here
 
                 $("#divEditZone").show();
             }});
         }
 
+        // Mirrors upstream's filtering contract, which is what the fork's zone
+        // search hooks into: the filter is only evaluated when
+        // editZoneFilteredRecords is null, and a name with no * or ? in it is
+        // an EXACT match on the fully qualified name.
         function showEditZonePage(pageNumber) {
             if (pageNumber != null) $("#txtEditZonePageNumber").val(pageNumber);
+
+            if (editZoneRecords == null) return;
+
+            var filterName = $("#txtEditZoneFilterName").val();
+            if (filterName === "") filterName = null;
+
+            var filterType = $("#txtEditZoneFilterType").val();
+            if (filterType === "") filterType = null;
+
+            var zone = $("#titleEditZone").attr("data-zone");
+
+            if (editZoneFilteredRecords == null) {
+                if ((filterName != null) || (filterType != null)) {
+                    editZoneFilteredRecords = [];
+
+                    var filterDomain = null, filterRegex = null;
+
+                    if (filterName != null) {
+                        filterDomain = filterName.toLowerCase();
+                        filterDomain = (filterDomain === "@") ? zone : filterDomain + "." + zone;
+
+                        if ((filterName.indexOf("*") > -1) || (filterName.indexOf("?") > -1)) {
+                            // backslashes are doubled: this whole block is a template literal
+                            filterRegex = new RegExp("^" + filterDomain
+                                .replace(/\\./g, "\\\\.").replace(/\\*/g, ".*").replace(/\\?/g, ".") + "$");
+                        }
+                    }
+
+                    if (filterType != null) filterType = filterType.toUpperCase();
+
+                    for (var i = 0; i < editZoneRecords.length; i++) {
+                        var record = editZoneRecords[i];
+
+                        if (filterRegex == null) {
+                            if ((filterDomain != null) && (record.name.toLowerCase() !== filterDomain)) continue;
+                        }
+                        else if (!filterRegex.test(record.name.toLowerCase())) continue;
+
+                        if ((filterType != null) && (record.type !== filterType)) continue;
+
+                        record.index = i;
+                        editZoneFilteredRecords.push(record);
+                    }
+                }
+                else {
+                    for (var j = 0; j < editZoneRecords.length; j++) editZoneRecords[j].index = j;
+                    editZoneFilteredRecords = editZoneRecords;
+                }
+            }
+
+            var rows = "";
+            for (var k = 0; k < editZoneFilteredRecords.length; k++) {
+                rows += "<tr data-name='" + editZoneFilteredRecords[k].name +
+                    "' data-type='" + editZoneFilteredRecords[k].type + "'></tr>";
+            }
+            $("#tableEditZoneBody").html(rows);
         }
 
         function refreshZones(checkDisplay, pageNumber) {
@@ -213,11 +288,21 @@ function pressIn(window, selector, props) {
 
 // jsdom does not type for us, so the characters after the one that opened the
 // box have to be put in by hand, exactly as the browser would have
-function typeToSearch(window, text) {
+function typeInto(window, selector, text) {
     press(window, { key: text.charAt(0) });
 
     if (text.length > 1)
-        window.jQuery("#txtGlobalSearch").val(text).trigger("input");
+        window.jQuery(selector).val(text).trigger("input");
+}
+
+const typeToSearch = (window, text) => typeInto(window, "#txtGlobalSearch", text);
+const typeToZone = (window, text) => typeInto(window, "#txtEditZoneFilterName", text);
+
+// what the zone editor's table is currently showing
+function shownRecords(window) {
+    return window.jQuery("#tableEditZoneBody tr").map(function () {
+        return window.jQuery(this).attr("data-name");
+    }).get();
 }
 
 function searchResponse(results) {
@@ -397,30 +482,66 @@ console.log("\nType to search keeps its hands off everything else");
     check("but does focus it", w.document.activeElement.id, "txtGlobalSearch");
 }
 
-console.log("\nTyping inside a zone searches that zone");
+console.log("\nInside a zone, typing goes to that zone's own search");
 {
     const w = await bootReady();
     startRouter(w);
     w.$("#mainPanelTabListZones").children("a").first()[0].click();
     deliver(w);
-    w.showEditZone("example.com", 1, "", "");
+    w.showEditZone("zone.com", 1, "", "");
     deliver(w);
 
-    typeToSearch(w, "web");
-    check("the placeholder says where it is looking",
-        w.$("#txtGlobalSearch").attr("placeholder"), "Search in example.com...");
+    typeToZone(w, "my");
+    check("the keystrokes land in the zone's filter", w.$("#txtEditZoneFilterName").val(), "my");
+    check("and not in the header box", w.$("#txtGlobalSearch").val(), "");
 
-    await tick(400);
-    const request = w.__pending.shift();
-    check("the search is pinned to this zone",
-        /[?&]zone=example\.com(&|$)/.test(request.url), true);
-    check("by equality, not by the wildcard filter",
-        /[?&]zoneExact=true(&|$)/.test(request.url), true);
+    await tick(300);
+    check("the table is filtered as you type, with no Go press",
+        shownRecords(w).join(","), "my.zone.com");
+    check("nothing was asked of the server", w.__pending.length, 0);
 
-    // and back out to every zone, without leaving the keyboard's reach
-    w.$("#lnkGlobalSearchAllZones")[0].click();
+    // the header box stays global even from in here
+    w.$("#txtGlobalSearch").val("www").trigger("input");
     await tick(400);
-    check("one click widens it again", /[?&]zone=/.test(w.__pending.shift().url), false);
+    check("the header search is never scoped to the zone",
+        /[?&]zone=/.test(w.__pending.shift().url), false);
+}
+
+console.log("\nThe zone search is fuzzy, not an exact match hunt");
+{
+    const w = await bootReady();
+    startRouter(w);
+    w.$("#mainPanelTabListZones").children("a").first()[0].click();
+    deliver(w);
+    w.showEditZone("zone.com", 1, "", "");
+    deliver(w);
+
+    const filter = async (text) => {
+        w.$("#txtEditZoneFilterName").val(text).trigger("input");
+        await tick(300);
+        return shownRecords(w);
+    };
+
+    // "ww" is half a label, so upstream's exact match on "ww.zone.com" finds
+    // nothing; a whole label would pass either way and prove nothing.
+    // old.zone.com comes along because it is a CNAME pointing at www.
+    check("half a label matches, no stars needed",
+        (await filter("ww")).join(","), "www.zone.com,old.zone.com");
+    check("a record is found by its value",
+        (await filter("10.0.0.8")).join(","), "www.zone.com");
+    check("and by its comment", (await filter("retired")).join(","), "old.zone.com");
+    check("and by its type", (await filter("mx")).join(","), "mail.zone.com");
+    check("space separated terms all have to match",
+        (await filter("zone a 10.0.0.7")).join(","), "my.zone.com");
+    check("a term that matches nothing empties the table",
+        (await filter("nosuchthing")).length, 0);
+    check("clearing it brings everything back", (await filter("")).length, 5);
+
+    // upstream's wildcard syntax is left exactly as it was
+    check("a wildcard filter still anchors the way upstream does",
+        (await filter("*.zone.com")).length, 0);
+    check("a wildcard filter matches on the zone relative name",
+        (await filter("w*")).join(","), "www.zone.com");
 }
 
 console.log("\nArrows highlight a result and enter opens it");
@@ -450,6 +571,11 @@ console.log("\nArrows highlight a result and enter opens it");
     pressIn(w, "#txtGlobalSearch", { which: 38 });
     check("the results are dismissed once one is taken",
         w.$("#divGlobalSearchResults").is(":visible"), false);
+
+    // the reported bug: the term stayed put, so the next thing typed was
+    // appended to it and searched for "zone.commy"
+    check("and the box is emptied, not left holding the old term",
+        w.$("#txtGlobalSearch").val(), "");
 }
 
 console.log("\nThe zone row ranks by how often a zone is opened");

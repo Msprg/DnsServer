@@ -95,6 +95,9 @@ for anchor in [
     "pageMain",                      # type-to-search only arms once past the login page
     "divEditZone",                   # type-to-search reads the zone in view from these two
     "titleEditZone",
+    "txtEditZoneFilterName",         # the zone's own search: relabelled, made fuzzy and live
+    "txtEditZoneFilterType",
+    "tableEditZoneBody",             # what the zone search ends up re-rendering
 ]:
     check(anchor in html_ids, "#" + anchor)
 

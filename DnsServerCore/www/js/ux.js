@@ -21,8 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Small quality of life additions that do not belong to any one screen:
 //
 //   - copy to clipboard buttons
-//   - a "recently visited zones" list
-//   - a "copy link to this view" button that pairs with the URL routing
+//   - a row of the zones this browser opens most often
 //   - remembering how many rows per page the user likes
 //   - a warning before walking away from unsaved DNS settings
 //
@@ -117,7 +116,7 @@ var UX = (function () {
     //anything in that file. If an anchor ever disappears the feature quietly
     //does not appear, rather than breaking the console.
     function injectMarkup() {
-        //global search + "copy link to this view", in the page header
+        //the global search box, in the page header
         var updateLink = $("#lnkUpdateAvailable");
 
         if (updateLink.length > 0) {
@@ -126,8 +125,7 @@ var UX = (function () {
                 '<input type="text" id="txtGlobalSearch" class="form-control" placeholder="Search zones &amp; records..." autocomplete="off" spellcheck="false" aria-label="Search zones and records" />' +
                 '<span id="lnkGlobalSearchClear" class="global-search-clear" title="Clear search">&times;</span>' +
                 '<div id="divGlobalSearchResults" class="global-search-results"></div>' +
-                '</div>' +
-                '<a href="#" id="lnkCopyViewLink" title="Copy a link to this view" style="margin-left: 8px;"><span class="glyphicon glyphicon-link" aria-hidden="true"></span></a>');
+                '</div>');
         }
 
         //Most used zones, sharing the zone list's button row.
@@ -459,18 +457,6 @@ var UX = (function () {
 
     // ------------------------------------------------------ copy view link
 
-    function initCopyLink() {
-        $("#lnkCopyViewLink").on("click", function (e) {
-            e.preventDefault();
-
-            if (typeof Router === "undefined")
-                return;
-
-            copyText(Router.url(), this);
-            showAlert("success", "Copied!", "A link to this view has been copied to the clipboard.");
-        });
-    }
-
     // ------------------------------------------------- zones search fallback
 
     //when a zone name filter finds nothing, offer to look inside the zones
@@ -523,7 +509,6 @@ var UX = (function () {
         initDsClickToCopy();
         initRememberedSelects();
         initSettingsGuard();
-        initCopyLink();
         initZonesSearchHint();
         initZoneChips();
 

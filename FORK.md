@@ -10,7 +10,9 @@ as mechanical to re-apply as possible.
 | Feature | Where |
 |---|---|
 | URL reflects the current view; refresh / bookmark / new tab restore it; browser back and forward work; the requested view survives an SSO login | `DnsServerCore/www/js/router.js` |
-| Global search across every zone's records, by name, record data or comment; type anywhere to open it, scoped to the zone on screen | `DnsServerCore/www/js/search.js` + `DnsServerCore/WebServiceZonesApiSearch.cs` |
+| Global search across every zone's records, by name, record data or comment | `DnsServerCore/www/js/search.js` + `DnsServerCore/WebServiceZonesApiSearch.cs` |
+| Zone record search: fuzzy instead of exact, matching values and comments too, filtering the table as you type | `DnsServerCore/www/js/search.js` |
+| Type anywhere to search &mdash; the zone's own filter while a zone is open, the header box otherwise | `DnsServerCore/www/js/search.js` |
 | Copy to clipboard, a row of the most used zones, copy link to this view, unsaved settings guard, working page size selects | `DnsServerCore/www/js/ux.js` |
 | Styling for all of the above, including dark and amber themes, plus sticky table headers | `DnsServerCore/www/css/ux.css` |
 
@@ -76,6 +78,8 @@ Conflicts should be rare and confined to the table above. After merging:
    lblCreateApiTokenOutputToken   btnDeleteCachedZone   btnDeleteLog
    preDnsClientFinalResponse   preCachedZoneViewerBody   preLogViewerBody
    tableDnssecViewDsBody   divDnssecViewDsAlert
+   pageMain   divEditZone   titleEditZone
+   txtEditZoneFilterName   txtEditZoneFilterType
    ```
 
    If an anchor is renamed upstream, that one feature silently stops appearing;
@@ -85,6 +89,13 @@ Conflicts should be rare and confined to the table above. After merging:
    `refreshCachedZonesList`, `refreshAllowedZonesList`, `refreshBlockedZonesList`,
    `resolveQuery`, `viewLog`, `queryLogs`, `showEditDhcpScope`,
    `refreshDhcpScopes`, `loadDnsSettings`, `showPageLogin`.
+
+   `js/search.js` also depends on two things inside upstream's
+   `showEditZonePage()`: that it only evaluates the record filter when the global
+   `editZoneFilteredRecords` is null, and that records carry `index` back into
+   `editZoneRecords`. The fork's zone search fills that array in beforehand
+   rather than reimplementing the paging. `tools/test-webapp.js` reproduces that
+   contract, so if upstream changes it the tests fail rather than the console.
 
    Also check that `SsoLoginFinalizeAsync` in `WebServiceAuthApi.cs` still ends
    by setting a `token` cookie and redirecting to `/`. `js/router.js` treats
@@ -110,8 +121,11 @@ It also stages the SSO round trip by hand: one jsdom window for the login page,
 a second one seeded with the first one's `sessionStorage` and a `token` cookie,
 standing in for the browser's trip out to the identity provider and back.
 
-The rest covers the search box's keyboard handling, where a wrong guard either
-silently swallows keystrokes or hijacks every field on the page.
+The rest covers the two search mechanisms: the header box's keyboard handling,
+where a wrong guard either silently swallows keystrokes or hijacks every field
+on the page, and the zone filter, whose stub in the harness reproduces
+upstream's `editZoneFilteredRecords` contract so the fork's fuzzy matching is
+exercised against the real thing.
 
 ```bash
 npm install --no-save jsdom@22

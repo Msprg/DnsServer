@@ -2,7 +2,9 @@ services:
   dns-server:
     container_name: dns-server
     hostname: dns-server
-    image: docker.io/technitium/dns-server:latest
+    #FORK: points at this fork's image, built by .github/workflows/docker-publish.yml.
+    #Upstream value was docker.io/technitium/dns-server:latest
+    image: ghcr.io/msprg/dns-server:latest
     # For DHCP deployments, use "host" network mode and remove all the port mappings, including the ports array by commenting them
     # network_mode: "host"
     ports:

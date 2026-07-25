@@ -1,0 +1,149 @@
+# FORK ADDITION - not present upstream.
+#
+# Builds the DNS server and publishes a multi architecture container image to
+# the GitHub Container Registry (ghcr.io). No secrets to configure: it signs in
+# with the automatically provided GITHUB_TOKEN.
+#
+# The Dockerfile in this repository does not build the project - it copies an
+# already published output from DnsServerApp/bin/Release/publish. So the .NET
+# build happens on the runner first, and only then is the image assembled.
+#
+# The published output is framework dependent (the entrypoint is
+# "dotnet DnsServerApp.dll") and carries no RuntimeIdentifier, so a single
+# build serves both linux/amd64 and linux/arm64.
+
+name: Docker Publish
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+    # documentation only changes do not need an image
+    paths-ignore:
+      - "**.md"
+      - ".github/FUNDING.yml"
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      technitium_library_ref:
+        description: "TechnitiumLibrary git ref to build against"
+        required: false
+        default: "master"
+      push_image:
+        description: "Push the image to ghcr.io"
+        type: boolean
+        required: false
+        default: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/dns-server
+  DOTNET_VERSION: "10.0.x"
+  # the image is portable, so only the base image needs to differ per platform
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # DnsServerCore.csproj references ..\..\TechnitiumLibrary\bin\*.dll, so the
+      # two repositories have to sit side by side under the workspace.
+      - name: Check out DnsServer
+        uses: actions/checkout@v4
+        with:
+          path: DnsServer
+
+      - name: Check out TechnitiumLibrary
+        uses: actions/checkout@v4
+        with:
+          repository: TechnitiumSoftware/TechnitiumLibrary
+          ref: ${{ github.event.inputs.technitium_library_ref || 'master' }}
+          path: TechnitiumLibrary
+
+      # Catches a fork change that broke a hook into upstream code. Runs before
+      # the build so it fails in seconds rather than after a full publish.
+      - name: Check fork integration points
+        run: |
+          python3 -m pip install --quiet --break-system-packages esprima \
+            || python3 -m pip install --quiet esprima \
+            || echo "esprima unavailable; the parse check will be skipped"
+          python3 DnsServer/tools/check-fork.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build TechnitiumLibrary
+        run: |
+          dotnet build TechnitiumLibrary/TechnitiumLibrary.ByteTree/TechnitiumLibrary.ByteTree.csproj -c Release
+          dotnet build TechnitiumLibrary/TechnitiumLibrary.Net/TechnitiumLibrary.Net.csproj -c Release
+          dotnet build TechnitiumLibrary/TechnitiumLibrary.Security.OTP/TechnitiumLibrary.Security.OTP.csproj -c Release
+
+      - name: Publish DnsServerApp
+        run: dotnet publish DnsServer/DnsServerApp/DnsServerApp.csproj -c Release
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to ghcr.io
+        # skipped for pull requests from forks, which have no package write token
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Work out image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Technitium DNS Server (fork)
+            org.opencontainers.image.description=Technitium DNS Server with web console UX changes
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: DnsServer
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_image != 'false') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Image tags"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

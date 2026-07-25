@@ -1,0 +1,374 @@
+/*
+Technitium DNS Server
+Copyright (C) 2026  Shreyas Zare (shreyas@technitium.com)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+/* ------------------------------------------------------------------ global search */
+
+.global-search {
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+    .global-search input {
+        width: 260px;
+        height: 26px;
+        padding: 2px 24px 2px 8px;
+        font-size: 12px;
+    }
+
+.global-search-clear {
+    position: absolute;
+    top: 2px;
+    right: 7px;
+    font-size: 16px;
+    line-height: 20px;
+    color: #999;
+    cursor: pointer;
+    display: none;
+}
+
+    .global-search-clear:hover {
+        color: #333;
+    }
+
+.global-search-results {
+    display: none;
+    position: absolute;
+    top: 30px;
+    right: 0;
+    width: 520px;
+    max-height: 460px;
+    overflow-y: auto;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
+    z-index: 1040;
+    text-align: left;
+    font-weight: normal;
+}
+
+.global-search-group {
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    background-color: #f5f5f5;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.global-search-item {
+    display: block;
+    padding: 6px 10px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+    cursor: pointer;
+    line-height: 1.35;
+}
+
+    .global-search-item:hover,
+    .global-search-item:focus,
+    .global-search-item.active {
+        background-color: #e8f1fb;
+        color: #333;
+        text-decoration: none;
+        outline: none;
+    }
+
+.global-search-name {
+    font-family: monospace;
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.global-search-meta {
+    font-size: 11px;
+    color: #888;
+    word-break: break-all;
+}
+
+.global-search-type {
+    display: inline-block;
+    min-width: 46px;
+    margin-right: 6px;
+    padding: 0 5px;
+    font-size: 10px;
+    font-weight: bold;
+    text-align: center;
+    color: #fff;
+    background-color: #337ab7;
+    border-radius: 3px;
+}
+
+.global-search-status {
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #888;
+}
+
+.global-search-hit {
+    background-color: #fff3b0;
+    color: #333;
+    border-radius: 2px;
+}
+
+/* the "no zones matched, try searching records" hint on the Zones tab */
+.zones-search-hint {
+    padding: 10px;
+    font-size: 13px;
+}
+
+/* ------------------------------------------------------------------ sticky table headers */
+
+/* Keeps column headers on screen while scrolling long tables. Targeted by id so
+   that no class has to be added to index.html, keeping the fork's diff against
+   upstream limited to the asset tags. If upstream renames one of these tables
+   the rule simply stops applying.
+
+   The header background has to match the theme or rows would show through it,
+   so it is carried in a custom property rather than repeating the whole
+   selector list once per theme. */
+:root {
+    --ux-sticky-bg: #fff;
+    --ux-sticky-edge: #ddd;
+}
+
+body.dark-mode {
+    --ux-sticky-bg: #2c2c2e;
+    --ux-sticky-edge: #444;
+}
+
+body.amber-mode {
+    --ux-sticky-bg: #1a120b;
+    --ux-sticky-edge: #4a3620;
+}
+
+@media (prefers-color-scheme: dark) {
+    body:not(.light-mode):not(.amber-mode) {
+        --ux-sticky-bg: #2c2c2e;
+        --ux-sticky-edge: #444;
+    }
+}
+
+#tableZones thead th,
+#tableEditZone thead th,
+#tableApps thead th,
+#tableAdminSessions thead th,
+#tableAdminUsers thead th,
+#tableAdminGroups thead th,
+#tableAdminPermissions thead th,
+#tableAdminCluster thead th,
+#dhcpTabPaneLeases thead th,
+#dhcpTabPaneScopes thead th,
+.query-logs thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background-color: var(--ux-sticky-bg);
+    box-shadow: inset 0 -2px 0 var(--ux-sticky-edge);
+}
+
+/* ------------------------------------------------------------------ copy to clipboard */
+
+.copy-btn {
+    padding: 0 5px;
+    margin-left: 4px;
+    font-size: 11px;
+    line-height: 18px;
+    color: #777;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    vertical-align: baseline;
+}
+
+    .copy-btn:hover {
+        color: #337ab7;
+        border-color: #ccc;
+    }
+
+    .copy-btn.copied {
+        color: #3c763d;
+        border-color: #3c763d;
+    }
+
+/* ------------------------------------------------------------------ recent zones */
+
+.recent-zones-menu {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+    .recent-zones-menu > li > a {
+        font-family: monospace;
+        font-size: 12px;
+        word-break: break-all;
+    }
+
+/* ------------------------------------------------------------------ dark mode */
+
+body.dark-mode .global-search input {
+    background-color: #2c2c2e;
+    border-color: #444;
+    color: #dcdcdc;
+}
+
+body.dark-mode .global-search-results {
+    background-color: #2c2c2e;
+    border-color: #444;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
+}
+
+body.dark-mode .global-search-group {
+    color: #999;
+    background-color: #242426;
+    border-bottom-color: #3a3a3c;
+}
+
+body.dark-mode .global-search-item {
+    color: #dcdcdc;
+    border-bottom-color: #3a3a3c;
+}
+
+    body.dark-mode .global-search-item:hover,
+    body.dark-mode .global-search-item:focus,
+    body.dark-mode .global-search-item.active {
+        background-color: #3a4a5c;
+        color: #fff;
+    }
+
+body.dark-mode .global-search-meta,
+body.dark-mode .global-search-status {
+    color: #999;
+}
+
+body.dark-mode .global-search-hit {
+    background-color: #6b5b17;
+    color: #fff;
+}
+
+body.dark-mode .global-search-clear {
+    color: #888;
+}
+
+    body.dark-mode .global-search-clear:hover {
+        color: #dcdcdc;
+    }
+
+body.dark-mode .copy-btn {
+    color: #999;
+}
+
+    body.dark-mode .copy-btn:hover {
+        color: #7cb3e8;
+        border-color: #555;
+    }
+
+    body.dark-mode .copy-btn.copied {
+        color: #7bc47b;
+        border-color: #7bc47b;
+    }
+
+/* ------------------------------------------------------------------ amber mode */
+
+body.amber-mode .global-search input {
+    background-color: #1a120b;
+    border-color: #664422;
+    color: #ffb000;
+}
+
+body.amber-mode .global-search-results {
+    background-color: #1a120b;
+    border-color: #664422;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
+}
+
+body.amber-mode .global-search-group {
+    color: #b3803c;
+    background-color: #241a10;
+    border-bottom-color: #4a3620;
+}
+
+body.amber-mode .global-search-item {
+    color: #ffb000;
+    border-bottom-color: #4a3620;
+}
+
+    body.amber-mode .global-search-item:hover,
+    body.amber-mode .global-search-item:focus,
+    body.amber-mode .global-search-item.active {
+        background-color: #3a2a15;
+        color: #ffcc55;
+    }
+
+body.amber-mode .global-search-meta,
+body.amber-mode .global-search-status {
+    color: #b3803c;
+}
+
+body.amber-mode .global-search-hit {
+    background-color: #664422;
+    color: #ffcc55;
+}
+
+body.amber-mode .global-search-clear {
+    color: #b3803c;
+}
+
+    body.amber-mode .global-search-clear:hover {
+        color: #ffb000;
+    }
+
+body.amber-mode .global-search-type {
+    background-color: #664422;
+    color: #ffcc55;
+}
+
+body.amber-mode .copy-btn {
+    color: #b3803c;
+}
+
+    body.amber-mode .copy-btn:hover {
+        color: #ffb000;
+        border-color: #664422;
+    }
+
+    body.amber-mode .copy-btn.copied {
+        color: #ffcc55;
+        border-color: #ffcc55;
+    }
+
+/* ------------------------------------------------------------------ narrow screens */
+
+@media (max-width: 767px) {
+    .global-search input {
+        width: 150px;
+    }
+
+    .global-search-results {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        width: auto;
+        top: 90px;
+    }
+}

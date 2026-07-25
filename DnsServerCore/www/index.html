@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <link href="css/main.css" rel="stylesheet" />
     <link href="css/dark-mode.css" rel="stylesheet" />
     <link href="css/amber-mode.css" rel="stylesheet" />
+    <link href="css/ux.css" rel="stylesheet" /><!-- FORK -->
 
     <script src="js/common.js"></script>
     <script src="js/main.js"></script>
@@ -51,6 +52,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <script src="js/dnsclient.js"></script>
     <script src="js/dhcp.js"></script>
     <script src="js/logs.js"></script>
+
+    <!-- FORK: must load after the views they hook into, and ux.js must load
+         before search.js because it injects the search box markup -->
+    <script src="js/router.js"></script>
+    <script src="js/ux.js"></script>
+    <script src="js/search.js"></script>
 </head>
 <body>
     <div id="header">

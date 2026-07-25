@@ -38,7 +38,11 @@ var UX = (function () {
     var ZONE_CHIPS_MAX = 6; //chips offered; how many are actually shown is down to the width of the row
 
     var settingsDirty = false;
-    var lastCountedZone = null;
+
+    //The zone the editor is showing, or null while the zone list is up. Doubles
+    //as the guard that stops a single visit being counted once per page and
+    //filter change, and as the chip to mark as the one you are looking at.
+    var zoneInView = null;
 
     // ----------------------------------------------------------- clipboard
 
@@ -137,6 +141,15 @@ var UX = (function () {
 
         if (zonesButtons.length > 0)
             zonesButtons.after('<div id="divFrequentZones" class="frequent-zones"></div>');
+
+        //and again inside the zone editor, so switching zones does not mean
+        //going back to the list first. That bar is floated on both sides - Back
+        //on the left, the cluster node selector on the right - and the same
+        //block formatting context fits between them.
+        var editorNode = $("#optEditZoneClusterNode").closest(".pull-right");
+
+        if (editorNode.length > 0)
+            editorNode.after('<div id="divFrequentZonesEditor" class="frequent-zones frequent-zones-editor"></div>');
 
         //"search inside the zones instead" hint, above the zone table
         $('<div id="divZonesSearchHint" class="zones-search-hint" style="display: none;"></div>').insertBefore("#tableZones");
@@ -306,10 +319,10 @@ var UX = (function () {
         //showEditZonePage also fires on every page and filter change inside a
         //zone, and counting those would make one long session look like heavy
         //use. Cleared when the zone list comes back, so reopening counts again.
-        if (zone === lastCountedZone)
+        if (zone === zoneInView)
             return;
 
-        lastCountedZone = zone;
+        zoneInView = zone;
 
         var usage = readZoneUsage();
         var entry = usage[zone];
@@ -325,17 +338,17 @@ var UX = (function () {
 
         delete usage[zone];
 
-        if (zone === lastCountedZone)
-            lastCountedZone = null;
+        if (zone === zoneInView)
+            zoneInView = null;
 
         writeZoneUsage(usage);
         renderZoneChips();
     }
 
     function renderZoneChips() {
-        var row = $("#divFrequentZones");
+        var rows = $(".frequent-zones");
 
-        if (row.length === 0)
+        if (rows.length === 0)
             return;
 
         var usage = readZoneUsage();
@@ -348,14 +361,15 @@ var UX = (function () {
         //row is one chip tall and clips whatever wraps past it.
         for (var i = 0; (i < names.length) && (i < ZONE_CHIPS_MAX); i++) {
             var times = usage[names[i]].n;
+            var here = (zoneInView != null) && (names[i] === zoneInView);
 
-            html += "<span class=\"zone-chip\">" +
+            html += "<span class=\"zone-chip" + (here ? " active" : "") + "\">" +
                 "<a href=\"#\" class=\"zone-chip-open\" data-zone=\"" + htmlEncode(names[i]) + "\" title=\"" + htmlEncode(names[i]) + " &mdash; opened " + times + (times === 1 ? " time" : " times") + "\">" + htmlEncode(names[i]) + "</a>" +
                 "<a href=\"#\" class=\"zone-chip-forget\" data-zone=\"" + htmlEncode(names[i]) + "\" title=\"Remove " + htmlEncode(names[i]) + " from this row\">&times;</a>" +
                 "</span>";
         }
 
-        row.html(html);
+        rows.html(html);
     }
 
     function initZoneChips() {
@@ -537,7 +551,8 @@ var UX = (function () {
 
         if (typeof originalRefreshZones === "function") {
             window.refreshZones = function () {
-                lastCountedZone = null;
+                zoneInView = null;
+                renderZoneChips(); //drops the "you are here" marker
 
                 return originalRefreshZones.apply(this, arguments);
             };

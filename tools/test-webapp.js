@@ -621,6 +621,47 @@ console.log("\nThe zone row ranks by how often a zone is opened");
     check("clicking a chip opens that zone", url(w), "/?t=zones&zone=quiet.example");
 }
 
+console.log("\nThe zone row follows you into a zone");
+{
+    const w = await bootReady();
+    startRouter(w);
+    w.$("#mainPanelTabListZones").children("a").first()[0].click();
+    deliver(w);
+
+    const visit = (zone) => {
+        w.showEditZone(zone, 1, "", "");
+        deliver(w);
+        w.refreshZones(false, 1);
+        deliver(w);
+    };
+
+    visit("one.example");
+    visit("two.example");
+
+    // the editor's own copy, so switching zones needs no trip back to the list
+    w.showEditZone("one.example", 1, "", "");
+    deliver(w);
+    check("the editor carries the row too",
+        w.$("#divFrequentZonesEditor .zone-chip").length, 2);
+    check("it sits between Back and the cluster selector",
+        w.$("#divFrequentZonesEditor").prev().find("#optEditZoneClusterNode").length, 1);
+
+    check("the zone being viewed is marked",
+        w.$("#divFrequentZonesEditor .zone-chip.active .zone-chip-open").attr("data-zone"), "one.example");
+    check("and only that one", w.$("#divFrequentZonesEditor .zone-chip.active").length, 1);
+
+    // straight to another zone without going back first
+    w.$("#divFrequentZonesEditor .zone-chip-open[data-zone='two.example']")[0].click();
+    deliver(w);
+    check("a chip switches zones from inside a zone", url(w), "/?t=zones&zone=two.example");
+    check("and the marker follows",
+        w.$("#divFrequentZonesEditor .zone-chip.active .zone-chip-open").attr("data-zone"), "two.example");
+
+    w.refreshZones(false, 1);
+    deliver(w);
+    check("back on the list, nothing is marked", w.$(".zone-chip.active").length, 0);
+}
+
 console.log("\nThe old recent-zones list is carried over, not thrown away");
 {
     const w = await bootReady("/", (win) =>

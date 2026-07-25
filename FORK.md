@@ -13,7 +13,7 @@ as mechanical to re-apply as possible.
 | Global search across every zone's records, by name, record data or comment | `DnsServerCore/www/js/search.js` + `DnsServerCore/WebServiceZonesApiSearch.cs` |
 | Zone record search: fuzzy instead of exact, matching values and comments too, filtering the table as you type | `DnsServerCore/www/js/search.js` |
 | Type anywhere to search &mdash; the zone's own filter while a zone is open, the header box otherwise | `DnsServerCore/www/js/search.js` |
-| Copy to clipboard, a row of the most used zones, copy link to this view, unsaved settings guard, working page size selects | `DnsServerCore/www/js/ux.js` |
+| Copy to clipboard, a row of the most used zones on both the zone list and the zone editor, unsaved settings guard, working page size selects | `DnsServerCore/www/js/ux.js` |
 | Styling for all of the above, including dark and amber themes, plus sticky table headers | `DnsServerCore/www/css/ux.css` |
 
 ## Design rule
@@ -74,7 +74,7 @@ Conflicts should be rare and confined to the table above. After merging:
    markup next to these element ids, and `css/ux.css` targets tables by id:
 
    ```
-   lnkUpdateAvailable   optZonesClusterNode   tableZones
+   lnkUpdateAvailable   optZonesClusterNode   optEditZoneClusterNode   tableZones
    lblCreateApiTokenOutputToken   btnDeleteCachedZone   btnDeleteLog
    preDnsClientFinalResponse   preCachedZoneViewerBody   preLogViewerBody
    tableDnssecViewDsBody   divDnssecViewDsAlert
@@ -146,7 +146,9 @@ python3 tools/check-fork.py
 ## Known limitations
 
 - The cluster node selector is not encoded in the URL, so on a cluster a reload
-  returns to the default node.
+  returns to the default node. This is deliberate: reaching a particular node is
+  an addressing question, better answered with a DNS name that points at it than
+  with a URL parameter the console has to keep in sync.
 - The `Docker Publish` workflow is the build of record: there is no .NET SDK and
   no sibling `TechnitiumLibrary` checkout in this working copy, so nothing here
   compiles locally. Push, and let CI tell you.

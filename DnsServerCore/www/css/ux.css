@@ -234,6 +234,14 @@ body.amber-mode {
     line-height: 0;
 }
 
+/* the same row inside the zone editor, where it sits between the Back pager on
+   one side and the cluster node selector on the other; both are taller than a
+   chip, so it is nudged down to line up with them */
+.frequent-zones-editor {
+    padding-top: 3px;
+    max-height: 33px;
+}
+
 .zone-chip {
     display: inline-block;
     vertical-align: top;
@@ -249,6 +257,12 @@ body.amber-mode {
     .zone-chip:hover {
         border-color: #adadad;
         background-color: #eee;
+    }
+
+    /* the zone currently open, so the row doubles as "you are here" */
+    .zone-chip.active {
+        border-color: #337ab7;
+        background-color: #e8f1fb;
     }
 
 .zone-chip-open {
@@ -320,6 +334,11 @@ body.dark-mode .zone-chip {
     body.dark-mode .zone-chip:hover {
         border-color: #5a5a5c;
         background-color: #3a3a3c;
+    }
+
+    body.dark-mode .zone-chip.active {
+        border-color: #6cb2eb;
+        background-color: #1f3345;
     }
 
 body.dark-mode .zone-chip-open {
@@ -407,6 +426,11 @@ body.amber-mode .zone-chip {
     body.amber-mode .zone-chip:hover {
         border-color: #6b4d2e;
         background-color: #31220f;
+    }
+
+    body.amber-mode .zone-chip.active {
+        border-color: #ffb000;
+        background-color: #3a2810;
     }
 
 body.amber-mode .zone-chip-open {

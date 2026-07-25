@@ -6,10 +6,12 @@ Run after merging upstream. Verifies, without needing a browser or a build,
 that everything the fork's add-on files hook into is still there:
 
   1. every FORK marker is still present in the upstream files that need one
-  2. every element id the fork injects markup next to, or styles, still exists
-  3. every upstream global function the fork wraps is still defined
-  4. every routable tab in router.js still maps to real elements
-  5. the fork's own JavaScript still parses (only if `esprima` is importable)
+  2. every fork asset is declared in DnsServerCore.csproj, which lists www
+     files by hand rather than globbing them
+  3. every element id the fork injects markup next to, or styles, still exists
+  4. every upstream global function the fork wraps is still defined
+  5. every routable tab in router.js still maps to real elements
+  6. the fork's own JavaScript still parses (only if `esprima` is importable)
 
 Exit code is 0 when everything checks out, 1 otherwise.
 """
@@ -45,6 +47,7 @@ EXPECTED_MARKERS = {
     "DnsServerCore/www/js/main.js": 2,
     "DnsServerCore/WebServiceZonesApi.cs": 1,
     "DnsServerCore/DnsWebService.cs": 1,
+    "DnsServerCore/DnsServerCore.csproj": 1,
     "docker-compose.yml": 1,
 }
 
@@ -100,6 +103,26 @@ for asset in ["css/ux.css", "js/router.js", "js/ux.js", "js/search.js"]:
 if "js/ux.js" in html and "js/search.js" in html:
     check(html.index("js/ux.js") < html.index("js/search.js"),
           "js/ux.js is loaded before js/search.js")
+
+
+# --------------------------------------- 3b. assets declared in the csproj
+
+# DnsServerCore.csproj lists every www file by hand instead of globbing, so an
+# asset that is not declared there is silently missing from the publish output
+# and 404s at runtime even though index.html references it.
+csproj = read("DnsServerCore", "DnsServerCore.csproj")
+
+print("\nFork assets declared in DnsServerCore.csproj")
+for asset in ["www/css/ux.css", "www/js/router.js", "www/js/search.js", "www/js/ux.js"]:
+    declared = ('Content Include="%s"' % asset.replace("/", "\\")) in csproj
+    check(declared, asset)
+
+# and catch any future asset added to index.html but not to the csproj
+referenced = set(re.findall(r'(?:src|href)="((?:js|css)/[^"]+)"', html))
+for asset in sorted(referenced):
+    if ('Content Include="www\\%s"' % asset.replace("/", "\\")) not in csproj:
+        notes.append("index.html references %s but DnsServerCore.csproj does not declare it; "
+                     "it will 404 in a published build" % asset)
 
 
 # ------------------------------------------------- 4. wrapped globals

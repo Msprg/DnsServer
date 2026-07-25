@@ -276,4 +276,30 @@
 		</Content>
 	</ItemGroup>
 
+	<!-- FORK: the www folder is enumerated file by file rather than globbed, so
+	     assets added by this fork have to be declared or they are silently left
+	     out of the publish output. Kept in its own ItemGroup at the end of the
+	     file so it does not conflict with upstream's list. -->
+	<ItemGroup>
+		<None Remove="www\css\ux.css" />
+		<None Remove="www\js\router.js" />
+		<None Remove="www\js\search.js" />
+		<None Remove="www\js\ux.js" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="www\css\ux.css">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="www\js\router.js">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="www\js\search.js">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="www\js\ux.js">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
 </Project>

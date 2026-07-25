@@ -44,7 +44,7 @@ DnsServerCore/www/js/ux.js
 
 ## Every change to an upstream file
 
-Eight lines in six files. This is the entire conflict surface.
+Nine changes across seven files. This is the entire conflict surface.
 
 | File | Change |
 |---|---|
@@ -54,6 +54,7 @@ Eight lines in six files. This is the entire conflict surface.
 | `DnsServerCore/WebServiceZonesApi.cs` | The word `partial` on the `WebServiceZonesApi` class declaration. |
 | `DnsServerCore/DnsWebService.cs` | One `MapGetAndPost` line registering `/api/zones/records/search`. |
 | `APIDOCS.md` | A new "Search Records" section. Pure insertion. |
+| `DnsServerCore/DnsServerCore.csproj` | Two `ItemGroup`s at the end of the file declaring the four fork assets. |
 | `docker-compose.yml` | `image:` repointed at this fork's GHCR image. |
 
 ## Syncing with upstream
@@ -65,7 +66,7 @@ git merge upstream/master        # or: git rebase upstream/master
 
 Conflicts should be rare and confined to the table above. After merging:
 
-1. Run the grep above and confirm all eight markers are still present and still
+1. Run the grep above and confirm all nine markers are still present and still
    make sense.
 2. Check the anchors the fork depends on still exist. `js/ux.js` injects its
    markup next to these element ids, and `css/ux.css` targets tables by id:
@@ -86,11 +87,15 @@ Conflicts should be rare and confined to the table above. After merging:
    `refreshDhcpScopes`, `loadDnsSettings`, `showPageLogin`.
 4. If upstream adds a main tab or a sub-tab, add it to `MAIN_TABS` / `SUB_TABS`
    in `js/router.js` so it becomes routable.
+5. If you add a new file under `www/`, declare it in `DnsServerCore.csproj`.
+   That file lists every asset by hand instead of globbing, so an undeclared
+   asset builds fine and then 404s at runtime. `tools/check-fork.py` checks
+   this.
 
 ### Automated post-merge check
 
-`tools/check-fork.py` verifies items 1 to 3 without needing a browser or a
-build:
+`tools/check-fork.py` verifies items 1 to 5 without needing a browser or a
+build, and also confirms every fork asset is declared in the csproj:
 
 ```bash
 python3 tools/check-fork.py
@@ -100,6 +105,6 @@ python3 tools/check-fork.py
 
 - The cluster node selector is not encoded in the URL, so on a cluster a reload
   returns to the default node.
-- `WebServiceZonesApiSearch.cs` has never been compiled in this working copy —
-  there is no .NET SDK and no sibling `TechnitiumLibrary` checkout here. Build
-  before trusting it.
+- The `Docker Publish` workflow is the build of record: there is no .NET SDK and
+  no sibling `TechnitiumLibrary` checkout in this working copy, so nothing here
+  compiles locally. Push, and let CI tell you.

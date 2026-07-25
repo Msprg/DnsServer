@@ -154,6 +154,13 @@ var UX = (function () {
         //"search inside the zones instead" hint, above the zone table
         $('<div id="divZonesSearchHint" class="zones-search-hint" style="display: none;"></div>').insertBefore("#tableZones");
 
+        //Restore Settings overwrites config on disk and, with the pre-ticked
+        //option, deletes the existing files first. That is behind a blue
+        //btn-primary, which reads as "the safe default action". The tick itself
+        //is left alone - it decides what a restore means, and that is upstream's
+        //call - but the button is made to look like what it does.
+        $("#btnRestoreSettings").removeClass("btn-primary").addClass("btn-danger");
+
         //copy buttons on the values that get copied most often
         addCopyButton($("#lblCreateApiTokenOutputToken"), "after", "#lblCreateApiTokenOutputToken", "copy token", "margin-left: 0; margin-top: 4px;");
         addCopyButton($("#btnDeleteCachedZone"), "after", "#preCachedZoneViewerBody", "copy", null);

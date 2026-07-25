@@ -678,6 +678,18 @@ console.log("\nThe old recent-zones list is carried over, not thrown away");
     check("a real visit beats a migrated entry", w.UX.zoneUsage()[0], "older.example");
 }
 
+console.log("\nUpstream rough edges the fork papers over");
+{
+    const w = await bootReady();
+    startRouter(w);
+
+    // it deletes config files off disk; blue btn-primary reads as "safe default"
+    check("Restore Settings is styled as the destructive action it is",
+        w.$("#btnRestoreSettings").hasClass("btn-danger"), true);
+    check("and no longer as the safe one",
+        w.$("#btnRestoreSettings").hasClass("btn-primary"), false);
+}
+
 console.log("\nBack and forward");
 {
     const w = await bootReady();

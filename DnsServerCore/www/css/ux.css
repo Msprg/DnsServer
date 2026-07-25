@@ -130,6 +130,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     border-radius: 2px;
 }
 
+/* ------------------------------------------------------------- upstream fixes */
+
+/* main.css puts the page level alert at z-index 1000, but Bootstrap's modal
+   backdrop is 1040 and the modal itself 1050. Any alert raised while a modal is
+   open is therefore drawn underneath it and simply never seen - including the
+   error messages explaining why the thing you just did in that modal failed.
+   Overridden here rather than in main.css so the fix costs no merge surface. */
+.AlertPlaceholder {
+    z-index: 1060;
+}
+
 /* the "no zones matched, try searching records" hint on the Zones tab */
 .zones-search-hint {
     padding: 10px;
@@ -240,6 +251,9 @@ body.amber-mode {
 .frequent-zones-editor {
     padding-top: 3px;
     max-height: 33px;
+    /* chips only carry a right margin, so without this the first one sits flush
+       against the Back pager; matches the gap between the chips themselves */
+    padding-left: 6px;
 }
 
 .zone-chip {

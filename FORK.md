@@ -143,6 +143,31 @@ build, and also confirms every fork asset is declared in the csproj:
 python3 tools/check-fork.py
 ```
 
+## Upstream bugs this fork works around
+
+Both are corrected from fork-only files, so neither adds anything to merge.
+
+| Bug | Worked around by |
+|---|---|
+| `main.css` puts `.AlertPlaceholder` at `z-index: 1000`, under Bootstrap's modal backdrop at 1040. Any alert raised while a modal is open is drawn behind it and never seen &mdash; including the error explaining why the thing you just did failed. | `.AlertPlaceholder { z-index: 1060 }` in `css/ux.css` |
+| Restore Settings deletes config files off disk, behind a blue `btn-primary` that reads as the safe default. | `js/ux.js` restyles it `btn-danger`. The pre-ticked "Delete Existing Files" is left alone: it decides what a restore *means*, and that is upstream's call. |
+
+### Upstream bugs deliberately left alone
+
+Not worth the merge surface. Better reported upstream than carried here.
+
+- **`serializeTableData()` return value unchecked** at `auth.js:2125-2126` and
+  `zone.js:2622-2623`. It returns `false` when a field fails validation, and
+  those four callers pass it straight to `encodeURIComponent`, sending the
+  literal string `"false"` as the permission list. Every other caller guards it.
+  Fixing it means editing two upstream files in functions the fork has no other
+  reason to touch.
+- **`sortTable()` in `common.js`** sorts only the rows currently rendered, so on
+  a paged table it sorts one page and calls it sorted, and it compares with
+  `innerText.toLowerCase()`, so serials and dates sort as text. Fixing it
+  properly means sorting the underlying data and re-paging &mdash; a
+  reimplementation that would drift from upstream silently.
+
 ## Known limitations
 
 - The cluster node selector is not encoded in the URL, so on a cluster a reload

@@ -99,6 +99,7 @@ for anchor in [
     "txtEditZoneFilterName",         # the zone's own search: relabelled, made fuzzy and live
     "txtEditZoneFilterType",
     "tableEditZoneBody",             # what the zone search ends up re-rendering
+    "btnRestoreSettings",            # restyled: it deletes config files, so it should not look like the safe option
 ]:
     check(anchor in html_ids, "#" + anchor)
 

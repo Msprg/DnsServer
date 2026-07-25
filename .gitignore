@@ -245,3 +245,7 @@ ModelManifest.xml
 .fake/
 
 Other/
+
+# FORK: pulled on demand by tools/test-router.js
+/node_modules/
+/package-lock.json

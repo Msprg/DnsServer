@@ -92,6 +92,21 @@ Conflicts should be rare and confined to the table above. After merging:
    asset builds fine and then 404s at runtime. `tools/check-fork.py` checks
    this.
 
+### Router regression tests
+
+`tools/test-router.js` loads the real `index.html`, the real jQuery/Bootstrap
+and the fork's own scripts into jsdom and drives the same call sequences the
+console does. It exists because the static checks cannot see a URL that is
+written correctly and then overwritten a moment later by an async callback that
+misreads the DOM - which is exactly how the zone parameters were once lost.
+
+```bash
+npm install --no-save jsdom@22
+node tools/test-router.js
+```
+
+Both this and the check below run in CI before the image is built.
+
 ### Automated post-merge check
 
 `tools/check-fork.py` verifies items 1 to 5 without needing a browser or a

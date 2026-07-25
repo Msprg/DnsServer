@@ -103,6 +103,12 @@ var Router = (function () {
     var started = false; //true once the main page is up and recording is allowed
     var currentState = null; //last state written to the address bar
 
+    //Which of the two Zones views the user last asked for. showEditZone() hides
+    //both panes, loads the records, calls showEditZonePage() and only then shows
+    //the editor, so for the duration of that call neither pane is visible and
+    //visibility alone cannot say which view we are in.
+    var zoneEditorRequested = false;
+
     // ---------------------------------------------------------------- helpers
 
     function findMainTab(key) {
@@ -316,6 +322,18 @@ var Router = (function () {
         record(captureCurrent(), forceReplace);
     }
 
+    //Trusts the panes when either of them is actually on screen, and falls back
+    //to the last requested view while showEditZone() has both of them hidden.
+    function inZoneEditor() {
+        if ($("#divEditZone").is(":visible"))
+            return true;
+
+        if ($("#divViewZones").is(":visible"))
+            return false;
+
+        return zoneEditorRequested;
+    }
+
     //per tab collection of the parameters worth putting in the URL
     var CAPTURE = {
         dashboard: function (state) {
@@ -330,7 +348,7 @@ var Router = (function () {
         },
 
         zones: function (state) {
-            if ($("#divEditZone").is(":visible")) {
+            if (inZoneEditor()) {
                 var zone = $("#titleEditZone").attr("data-zone");
                 if ((zone != null) && (zone !== ""))
                     state.zone = zone;
@@ -701,7 +719,37 @@ var Router = (function () {
         };
     }
 
+    //like wrap(), but the callback runs on every call, including while the
+    //router is suppressed; used only to track view state, never to record
+    function observe(name, onCall) {
+        var original = window[name];
+
+        if (typeof original !== "function")
+            return;
+
+        window[name] = function () {
+            try {
+                onCall.apply(this, arguments);
+            }
+            catch (e) {
+                //tracking must never break the view
+            }
+
+            return original.apply(this, arguments);
+        };
+    }
+
     function installFunctionHooks() {
+        //has to be tracked separately from recording: a zone opened by a URL
+        //restore is suppressed, but the router still needs to know where it is
+        observe("showEditZone", function () {
+            zoneEditorRequested = true;
+        });
+
+        observe("refreshZones", function () {
+            zoneEditorRequested = false;
+        });
+
         //when the session ends, stop recording but remember where the user was
         //so that logging back in returns them to it
         var originalShowPageLogin = window.showPageLogin;

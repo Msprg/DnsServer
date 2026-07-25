@@ -27,7 +27,11 @@ $(function () {
         hash = "?" + hash.substr(1);
 
     var urlParams = new URLSearchParams(hash);
-    window.history.replaceState(null, '', window.location.protocol + "//" + window.location.host + window.location.pathname);
+
+    //FORK: appended window.location.search. Strips the SSO callback fragment as
+    //upstream does, but keeps the query string, which carries the view that
+    //js/router.js has to restore.
+    window.history.replaceState(null, '', window.location.protocol + "//" + window.location.host + window.location.pathname + window.location.search);
 
     var errorMessage = urlParams.get("error");
     if (errorMessage != null) {

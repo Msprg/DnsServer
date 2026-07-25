@@ -129,7 +129,11 @@ function showPageMain() {
         if (sessionData.info.permissions.Zones.canView) {
             $("#mainPanelTabListZones").addClass("active");
             $("#mainPanelTabPaneZones").addClass("active");
-            refreshZones(true);
+
+            //FORK: guarded. Router.start() at the end of this function loads the
+            //view named by the URL instead, and this call would race it.
+            if ((typeof Router === "undefined") || !Router.hasPendingRoute())
+                refreshZones(true);
         }
         else if (sessionData.info.permissions.Cache.canView) {
             $("#mainPanelTabListCachedZones").addClass("active");
@@ -262,6 +266,11 @@ function showPageMain() {
 
         $("#lblAboutUptime").text(moment(sessionData.info.uptimestamp).local().format("lll") + " (" + moment(sessionData.info.uptimestamp).fromNow() + ")");
     }, 60000);
+
+    //FORK: restores the view named by the URL and starts keeping the address bar
+    //in sync. Must run last, once tab visibility reflects this user's permissions.
+    if (typeof Router !== "undefined")
+        Router.start();
 }
 
 $(function () {

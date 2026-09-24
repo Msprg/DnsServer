@@ -113,6 +113,7 @@ function boot(startUrl, seed) {
         function refreshAdminGroups() {}
         function refreshAdminPermissions() {}
         function refreshAdminSsoConfig() {}
+        function refreshAdminLdapConfig() {}
         function refreshAdminCluster() {}
 
         // the records a zone is loaded with; tests may replace this fixture

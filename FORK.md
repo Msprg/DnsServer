@@ -115,7 +115,8 @@ Conflicts should be rare and confined to the table above. After merging:
    If upstream ever carries the return URL through the flow itself, the
    sessionStorage hand-off in `router.js` becomes redundant and should go.
 4. If upstream adds a main tab or a sub-tab, add it to `MAIN_TABS` / `SUB_TABS`
-   in `js/router.js` so it becomes routable.
+   in `js/router.js` so it becomes routable. `tools/check-fork.py` lists any
+   tab or sub-tab present in `index.html` that the router does not know.
 5. If you add a new file under `www/`, declare it in `DnsServerCore.csproj`.
    That file lists every asset by hand instead of globbing, so an undeclared
    asset builds fine and then 404s at runtime. `tools/check-fork.py` checks

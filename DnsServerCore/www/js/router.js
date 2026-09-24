@@ -75,6 +75,7 @@ var Router = (function () {
             { key: "groups", id: "Groups" },
             { key: "permissions", id: "Permissions" },
             { key: "sso", id: "Sso" },
+            { key: "ldap", id: "Ldap" },
             { key: "cluster", id: "Cluster" }
         ],
         logs: [
@@ -710,6 +711,10 @@ var Router = (function () {
 
                 case "sso":
                     refreshAdminSsoConfig();
+                    break;
+
+                case "ldap":
+                    refreshAdminLdapConfig();
                     break;
 
                 case "cluster":

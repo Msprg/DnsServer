@@ -151,7 +151,7 @@ for fn in [
     "refreshDhcpLeases", "refreshDashboard", "refreshApps", "refreshDnsSettings",
     "refreshLogFilesList", "refreshQueryLogsTab", "loadDnsSettings", "showPageLogin",
     "showPageMain", "refreshAdminSessions", "refreshAdminUsers", "refreshAdminGroups",
-    "refreshAdminPermissions", "refreshAdminSsoConfig", "refreshAdminCluster",
+    "refreshAdminPermissions", "refreshAdminSsoConfig", "refreshAdminLdapConfig", "refreshAdminCluster",
     "showAlert", "htmlEncode", "HTTPRequest",
 ]:
     check(fn in upstream_globals, fn + "()")
@@ -187,6 +187,13 @@ else:
     unrouted = sorted(upstream_main - routed_main)
     if unrouted:
         notes.append("main tabs not yet routable (add to MAIN_TABS in router.js): " + ", ".join(unrouted))
+
+    for group, block in re.findall(r"(\w+):\s*\[(.*?)\]", sub_block.group(1), re.S):
+        upstream_sub = set(re.findall(r'id="%sTabList(\w+)"' % group, html))
+        routed_sub = set(i for _k, i in re.findall(r'key:\s*"([^"]+)",\s*id:\s*"([^"]+)"', block))
+        unrouted = sorted(upstream_sub - routed_sub)
+        if unrouted:
+            notes.append("%s sub-tabs not yet routable (add to SUB_TABS.%s in router.js): %s" % (group, group, ", ".join(unrouted)))
 
 
 # --------------------------------------------------- 6. css sticky targets

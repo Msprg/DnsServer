@@ -198,18 +198,9 @@ namespace DnsServerCore.Dns.ZoneManagers
             string tmpBlockListConfigFile = Path.Combine(_dnsServer.ConfigFolder, "blocklist.tmp");
             string blockListConfigFile = Path.Combine(_dnsServer.ConfigFolder, "blocklist.config");
 
-            using (MemoryStream mS = new MemoryStream())
+            using (FileStream fS = new FileStream(tmpBlockListConfigFile, FileMode.Create, FileAccess.Write))
             {
-                //serialize config
-                WriteConfigTo(mS);
-
-                //write config
-                mS.Position = 0;
-
-                using (FileStream fS = new FileStream(tmpBlockListConfigFile, FileMode.Create, FileAccess.Write))
-                {
-                    mS.CopyTo(fS);
-                }
+                WriteConfigTo(fS);
             }
 
             File.Move(tmpBlockListConfigFile, blockListConfigFile, true);
@@ -434,9 +425,16 @@ namespace DnsServerCore.Dns.ZoneManagers
                                 secondWord = PopWord(ref line);
 
                                 if ((secondWord.Length == 0) || secondWord.StartsWith('#'))
+                                {
                                     hostname = firstWord;
+                                }
                                 else
+                                {
+                                    if (!IPAddress.TryParse(firstWord, out _))
+                                        continue; //first word must be an IP address for using second word as hostname as per hosts file format
+
                                     hostname = secondWord;
+                                }
                             }
 
                             hostname = hostname.Trim('.').ToLowerInvariant();
@@ -825,7 +823,8 @@ namespace DnsServerCore.Dns.ZoneManagers
                         blockListZone.Add(domain, blockLists);
                     }
 
-                    blockLists.Add(blockListQueue.Key);
+                    if (!blockLists.Contains(blockListQueue.Key))
+                        blockLists.Add(blockListQueue.Key);
                 }
             }
 
@@ -868,7 +867,7 @@ namespace DnsServerCore.Dns.ZoneManagers
                 for (int i = 0; i < answer.Length; i++)
                     answer[i] = new DnsResourceRecord(question.Name, DnsResourceRecordType.TXT, question.Class, _dnsServer.BlockingAnswerTtl, new DnsTXTRecordData("source=block-list-zone; blockListUrl=" + blockLists[i].AbsoluteUri + "; domain=" + blockedDomain));
 
-                return new DnsDatagram(request.Identifier, true, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, false, false, false, DnsResponseCode.NoError, request.Question, answer);
+                return new DnsDatagram(request.Identifier, true, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, true, false, false, DnsResponseCode.NoError, request.Question, answer);
             }
             else
             {
@@ -902,7 +901,7 @@ namespace DnsServerCore.Dns.ZoneManagers
                         if (parentDomain is null)
                             parentDomain = string.Empty;
 
-                        return new DnsDatagram(request.Identifier, true, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, false, false, false, DnsResponseCode.NxDomain, request.Question, null, [new DnsResourceRecord(parentDomain, DnsResourceRecordType.SOA, question.Class, _dnsServer.BlockingAnswerTtl, _soaRecord)], null, request.EDNS is null ? ushort.MinValue : _dnsServer.UdpPayloadSize, EDnsHeaderFlags.None, options);
+                        return new DnsDatagram(request.Identifier, true, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, !_dnsServer.AllowTxtBlockingReport, false, false, DnsResponseCode.NxDomain, request.Question, null, [new DnsResourceRecord(parentDomain, DnsResourceRecordType.SOA, question.Class, _dnsServer.BlockingAnswerTtl, _soaRecord)], null, request.EDNS is null ? ushort.MinValue : _dnsServer.UdpPayloadSize, EDnsHeaderFlags.None, options);
 
                     default:
                         throw new InvalidOperationException();
@@ -968,7 +967,7 @@ namespace DnsServerCore.Dns.ZoneManagers
                         break;
                 }
 
-                return new DnsDatagram(request.Identifier, true, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, false, false, false, DnsResponseCode.NoError, request.Question, answer, authority, null, request.EDNS is null ? ushort.MinValue : _dnsServer.UdpPayloadSize, EDnsHeaderFlags.None, options);
+                return new DnsDatagram(request.Identifier, true, DnsOpcode.StandardQuery, false, false, request.RecursionDesired, true, false, false, DnsResponseCode.NoError, request.Question, answer, authority, null, request.EDNS is null ? ushort.MinValue : _dnsServer.UdpPayloadSize, EDnsHeaderFlags.None, options);
             }
         }
 

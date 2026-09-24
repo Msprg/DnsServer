@@ -819,6 +819,13 @@ namespace DnsServerCore.Dns.Zones
                 //update SOA
                 _entries[DnsResourceRecordType.SOA] = newSoaRecords;
 
+                if (_dnssecStatus != AuthZoneDnssecStatus.Unsigned)
+                {
+                    //sign SOA and update RRSig
+                    IReadOnlyList<DnsResourceRecord> newRRSigRecords = SignRRSet(newSoaRecords);
+                    AddOrUpdateRRSigRecords(newRRSigRecords, out _);
+                }
+
                 //clear history
                 _zoneHistory.Clear();
             }
@@ -835,7 +842,7 @@ namespace DnsServerCore.Dns.Zones
         protected void CleanupHistory()
         {
             DnsSOARecordData soa = _entries[DnsResourceRecordType.SOA][0].RDATA as DnsSOARecordData;
-            DateTime expiry = DateTime.UtcNow.AddSeconds(-soa.Expire);
+            DateTime expiry = DateTime.UtcNow.AddSeconds(-(soa.Refresh + soa.Retry + 300)); //300 sec for TSIG fudge
             int index = 0;
 
             while (index < _zoneHistory.Count)

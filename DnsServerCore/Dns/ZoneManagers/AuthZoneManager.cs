@@ -251,20 +251,25 @@ namespace DnsServerCore.Dns.ZoneManagers
             string tmpZoneFile = Path.Combine(_dnsServer.ConfigFolder, "zones", zoneName + ".tmp");
             string zoneFile = Path.Combine(_dnsServer.ConfigFolder, "zones", zoneName + ".zone");
 
-            using (MemoryStream mS = new MemoryStream())
+            using (FileStream fS = new FileStream(tmpZoneFile, FileMode.Create, FileAccess.Write))
             {
-                //serialize zone
-                WriteZoneTo(zoneName, mS);
+                WriteZoneTo(zoneName, fS);
 
-                if (mS.Position == 0)
-                    return; //zone was not found
-
-                //write to zone file
-                mS.Position = 0;
-
-                using (FileStream fS = new FileStream(tmpZoneFile, FileMode.Create, FileAccess.Write))
+                if (fS.Position == 0)
                 {
-                    mS.CopyTo(fS);
+                    //zone was not found
+                    fS.Dispose();
+
+                    try
+                    {
+                        File.Delete(tmpZoneFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        _dnsServer.LogManager.Write(ex);
+                    }
+
+                    return;
                 }
             }
 
@@ -859,6 +864,18 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         #region zone create / delete / convert / clone
 
+        private static void ValidateZoneName(string zoneName)
+        {
+            if (zoneName.Contains('*'))
+                throw new DnsWebServiceException("Domain name for a zone cannot contain wildcard character.");
+
+            foreach (char invalidChar in Path.GetInvalidFileNameChars())
+            {
+                if (zoneName.Contains(invalidChar))
+                    throw new DnsWebServiceException("The zone name contains an invalid character: " + invalidChar);
+            }
+        }
+
         internal AuthZoneInfo CreateSpecialPrimaryZone(string zoneName, DnsSOARecordData soaRecord, DnsNSRecordData ns)
         {
             PrimaryZone apexZone = new PrimaryZone(_dnsServer, zoneName, soaRecord, ns);
@@ -944,6 +961,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public AuthZoneInfo CreatePrimaryZone(string zoneName, bool useSoaSerialDateScheme)
         {
+            ValidateZoneName(zoneName);
+
             PrimaryZone apexZone = new PrimaryZone(_dnsServer, zoneName, useSoaSerialDateScheme);
 
             _zoneIndexLock.EnterWriteLock();
@@ -982,6 +1001,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public async Task<AuthZoneInfo> CreateSecondaryZoneAsync(string zoneName, IReadOnlyList<NameServerAddress> primaryNameServerAddresses = null, DnsTransportProtocol primaryZoneTransferProtocol = DnsTransportProtocol.Tcp, string primaryZoneTransferTsigKeyName = null, bool validateZone = false, bool ignoreSoaFailure = false)
         {
+            ValidateZoneName(zoneName);
+
             SecondaryZone apexZone = await SecondaryZone.CreateAsync(_dnsServer, zoneName, primaryNameServerAddresses, primaryZoneTransferProtocol, primaryZoneTransferTsigKeyName, validateZone, ignoreSoaFailure);
 
             _zoneIndexLock.EnterWriteLock();
@@ -1022,6 +1043,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public async Task<AuthZoneInfo> CreateStubZoneAsync(string zoneName, IReadOnlyList<NameServerAddress> primaryNameServerAddresses = null, bool ignoreSoaFailure = false)
         {
+            ValidateZoneName(zoneName);
+
             StubZone apexZone = await StubZone.CreateAsync(_dnsServer, zoneName, primaryNameServerAddresses, ignoreSoaFailure);
 
             _zoneIndexLock.EnterWriteLock();
@@ -1050,6 +1073,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public AuthZoneInfo CreateForwarderZone(string zoneName)
         {
+            ValidateZoneName(zoneName);
+
             ForwarderZone apexZone = new ForwarderZone(_dnsServer, zoneName);
 
             _zoneIndexLock.EnterWriteLock();
@@ -1076,6 +1101,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public AuthZoneInfo CreateForwarderZone(string zoneName, DnsTransportProtocol forwarderProtocol, string forwarder, bool dnssecValidation, DnsForwarderRecordProxyType proxyType, string proxyAddress, ushort proxyPort, string proxyUsername, string proxyPassword, string fwdRecordComments)
         {
+            ValidateZoneName(zoneName);
+
             ForwarderZone apexZone = new ForwarderZone(_dnsServer, zoneName, forwarderProtocol, forwarder, dnssecValidation, proxyType, proxyAddress, proxyPort, proxyUsername, proxyPassword, fwdRecordComments);
 
             _zoneIndexLock.EnterWriteLock();
@@ -1114,6 +1141,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public AuthZoneInfo CreateSecondaryForwarderZone(string zoneName, IReadOnlyList<NameServerAddress> primaryNameServerAddresses = null, DnsTransportProtocol primaryZoneTransferProtocol = DnsTransportProtocol.Tcp, string primaryZoneTransferTsigKeyName = null)
         {
+            ValidateZoneName(zoneName);
+
             SecondaryForwarderZone apexZone = new SecondaryForwarderZone(_dnsServer, zoneName, primaryNameServerAddresses, primaryZoneTransferProtocol, primaryZoneTransferTsigKeyName);
 
             _zoneIndexLock.EnterWriteLock();
@@ -1142,6 +1171,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public AuthZoneInfo CreateCatalogZone(string zoneName)
         {
+            ValidateZoneName(zoneName);
+
             CatalogZone apexZone = new CatalogZone(_dnsServer, zoneName);
 
             _zoneIndexLock.EnterWriteLock();
@@ -1185,6 +1216,8 @@ namespace DnsServerCore.Dns.ZoneManagers
 
         public AuthZoneInfo CreateSecondaryCatalogZone(string zoneName, IReadOnlyList<NameServerAddress> primaryNameServerAddresses, DnsTransportProtocol primaryZoneTransferProtocol = DnsTransportProtocol.Tcp, string primaryZoneTransferTsigKeyName = null)
         {
+            ValidateZoneName(zoneName);
+
             SecondaryCatalogZone apexZone = new SecondaryCatalogZone(_dnsServer, zoneName, primaryNameServerAddresses, primaryZoneTransferProtocol, primaryZoneTransferTsigKeyName);
 
             _zoneIndexLock.EnterWriteLock();
@@ -3254,13 +3287,21 @@ namespace DnsServerCore.Dns.ZoneManagers
 
                             if (dnssecOk)
                             {
-                                //add proof of non existence (NXDOMAIN) to prove the qname does not exists
+                                //add proof of non existence to prove the qname does not have a RRset of its own.
+                                //When hasSubDomains is true, qname is an empty non-terminal (rCode stays NoError
+                                //above) rather than a genuinely non-existent name - RFC 4035 2.3 forbids creating
+                                //an NSEC record for an ENT, so the covering NSEC from the closest real predecessor
+                                //is the only proof available, and the wildcard-disproof step that would normally
+                                //follow must be skipped: the wildcard name it computes from qname can itself be a
+                                //real, existing record (the ENT's own child), and asserting its non-existence is
+                                //simply wrong. NSEC3 is unaffected: an ENT always gets its own NSEC3 record
+                                //(RFC 5155 7.1), so a genuine ENT never reaches this "zone not found" branch.
                                 IReadOnlyList<DnsResourceRecord> nsecRecords;
 
                                 if (apexZone.DnssecStatus == AuthZoneDnssecStatus.SignedWithNSEC3)
                                     nsecRecords = _root.FindNSec3ProofOfNonExistenceNxDomain(question.Name, false);
                                 else
-                                    nsecRecords = _root.FindNSecProofOfNonExistenceNxDomain(question.Name, false);
+                                    nsecRecords = _root.FindNSecProofOfNonExistenceNxDomain(question.Name, hasSubDomains);
 
                                 if (nsecRecords.Count > 0)
                                 {

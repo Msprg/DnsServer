@@ -68,13 +68,22 @@ function showPageMain() {
 
     $("#pageLogin").hide();
 
-    if (sessionData.isSsoUser) {
-        $("#mnuUserChangePassword").hide();
-        $("#mnuUserConfigure2FA").hide();
-    }
-    else {
-        $("#mnuUserChangePassword").show();
-        $("#mnuUserConfigure2FA").show();
+    switch (sessionData.type) {
+        case "RemoteSSO":
+            $("#mnuUserChangePassword").hide();
+            $("#mnuUserConfigure2FA").hide();
+            break;
+
+        case "RemoteLDAP":
+            $("#mnuUserChangePassword").hide();
+            $("#mnuUserConfigure2FA").show();
+            break;
+
+        case "Local":
+        default:
+            $("#mnuUserChangePassword").show();
+            $("#mnuUserConfigure2FA").show();
+            break;
     }
 
     $("#mnuUser").show();
@@ -1437,8 +1446,6 @@ function loadDnsSettings(responseJSON) {
 
     $("#txtCachePrefetchEligibility").val(responseJSON.response.cachePrefetchEligibility);
     $("#txtCachePrefetchTrigger").val(responseJSON.response.cachePrefetchTrigger);
-    $("#txtCachePrefetchSampleIntervalInMinutes").val(responseJSON.response.cachePrefetchSampleIntervalInMinutes);
-    $("#txtCachePrefetchSampleEligibilityHitsPerHour").val(responseJSON.response.cachePrefetchSampleEligibilityHitsPerHour);
 
     //blocking
     $("#chkEnableBlocking").prop("checked", responseJSON.response.enableBlocking);
@@ -1450,9 +1457,9 @@ function loadDnsSettings(responseJSON) {
     $("#rdBlockingTypeAnyAddress").prop("disabled", !responseJSON.response.enableBlocking);
     $("#rdBlockingTypeNxDomain").prop("disabled", !responseJSON.response.enableBlocking);
     $("#rdBlockingTypeCustomAddress").prop("disabled", !responseJSON.response.enableBlocking);
+    $("#txtBlockingAnswerTtl").prop("disabled", !responseJSON.response.enableBlocking);
     $("#txtBlockListUrls").prop("disabled", !responseJSON.response.enableBlocking);
     $("#optQuickBlockList").prop("disabled", !responseJSON.response.enableBlocking);
-    $("#txtBlockListUpdateIntervalHours").prop("disabled", !responseJSON.response.enableBlocking);
 
     $("#chkAllowTxtBlockingReport").prop("checked", responseJSON.response.allowTxtBlockingReport);
 
@@ -1494,7 +1501,7 @@ function loadDnsSettings(responseJSON) {
     }
     else {
         $("#txtBlockListUrls").val(getArrayAsString(blockListUrls));
-        $("#btnUpdateBlockListsNow").prop("disabled", !responseJSON.response.enableBlocking);
+        $("#btnUpdateBlockListsNow").prop("disabled", false);
     }
 
     $("#optQuickBlockList").val("blank");
@@ -2073,21 +2080,7 @@ function saveDnsSettings(objBtn) {
             return;
         }
 
-        var cachePrefetchSampleIntervalInMinutes = $("#txtCachePrefetchSampleIntervalInMinutes").val();
-        if ((cachePrefetchSampleIntervalInMinutes === null) || (cachePrefetchSampleIntervalInMinutes === "")) {
-            showAlert("warning", "Missing!", "Please enter cache auto prefetch sample interval value.");
-            $("#txtCachePrefetchSampleIntervalInMinutes").trigger("focus");
-            return;
-        }
-
-        var cachePrefetchSampleEligibilityHitsPerHour = $("#txtCachePrefetchSampleEligibilityHitsPerHour").val();
-        if ((cachePrefetchSampleEligibilityHitsPerHour === null) || (cachePrefetchSampleEligibilityHitsPerHour === "")) {
-            showAlert("warning", "Missing!", "Please enter cache auto prefetch sample eligibility value.");
-            $("#txtCachePrefetchSampleEligibilityHitsPerHour").trigger("focus");
-            return;
-        }
-
-        formData += "&saveCache=" + saveCache + "&serveStale=" + serveStale + "&serveStaleTtl=" + serveStaleTtl + "&serveStaleAnswerTtl=" + serveStaleAnswerTtl + "&serveStaleResetTtl=" + serveStaleResetTtl + "&serveStaleMaxWaitTime=" + serveStaleMaxWaitTime + "&cacheMaximumEntries=" + cacheMaximumEntries + "&cacheMinimumRecordTtl=" + cacheMinimumRecordTtl + "&cacheMaximumRecordTtl=" + cacheMaximumRecordTtl + "&cacheNegativeRecordTtl=" + cacheNegativeRecordTtl + "&cacheFailureRecordTtl=" + cacheFailureRecordTtl + "&cachePrefetchEligibility=" + cachePrefetchEligibility + "&cachePrefetchTrigger=" + cachePrefetchTrigger + "&cachePrefetchSampleIntervalInMinutes=" + cachePrefetchSampleIntervalInMinutes + "&cachePrefetchSampleEligibilityHitsPerHour=" + cachePrefetchSampleEligibilityHitsPerHour;
+        formData += "&saveCache=" + saveCache + "&serveStale=" + serveStale + "&serveStaleTtl=" + serveStaleTtl + "&serveStaleAnswerTtl=" + serveStaleAnswerTtl + "&serveStaleResetTtl=" + serveStaleResetTtl + "&serveStaleMaxWaitTime=" + serveStaleMaxWaitTime + "&cacheMaximumEntries=" + cacheMaximumEntries + "&cacheMinimumRecordTtl=" + cacheMinimumRecordTtl + "&cacheMaximumRecordTtl=" + cacheMaximumRecordTtl + "&cacheNegativeRecordTtl=" + cacheNegativeRecordTtl + "&cacheFailureRecordTtl=" + cacheFailureRecordTtl + "&cachePrefetchEligibility=" + cachePrefetchEligibility + "&cachePrefetchTrigger=" + cachePrefetchTrigger;
     }
 
     //blocking
@@ -2428,11 +2421,10 @@ function updateBlockingState() {
     $("#rdBlockingTypeAnyAddress").prop("disabled", !enableBlocking);
     $("#rdBlockingTypeNxDomain").prop("disabled", !enableBlocking);
     $("#rdBlockingTypeCustomAddress").prop("disabled", !enableBlocking);
+    $("#txtBlockingAnswerTtl").prop("disabled", !enableBlocking);
     $("#txtCustomBlockingAddresses").prop("disabled", !enableBlocking || !$("#rdBlockingTypeCustomAddress").prop("checked"));
     $("#txtBlockListUrls").prop("disabled", !enableBlocking);
     $("#optQuickBlockList").prop("disabled", !enableBlocking);
-    $("#txtBlockListUpdateIntervalHours").prop("disabled", !enableBlocking);
-    $("#btnUpdateBlockListsNow").prop("disabled", !enableBlocking || ($("#txtBlockListUrls").val() == ""));
 }
 
 function dashboardBlockingOptionsOnClick() {

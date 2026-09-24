@@ -206,6 +206,24 @@ $(function () {
                 break;
         }
     });
+
+    $("#chkAdminSsoAllowSignup").on("click", function () {
+        var ssoAllowSignup = $("#chkAdminSsoAllowSignup").prop("checked");
+
+        $("#chkAdminSsoAllowSignupOnlyForMappedUsers").prop("disabled", !ssoAllowSignup);
+    });
+
+    $("input[type=radio][name=rdLdapSslOption]").on("change", function () {
+        var rdLdapSslOption = $("input[name=rdLdapSslOption]:checked").val();
+
+        $("#chkAdminLdapIgnoreSslErrors").prop("disabled", rdLdapSslOption == "None");
+    });
+
+    $("#chkAdminLdapAllowSignup").on("click", function () {
+        var ldapAllowSignup = $("#chkAdminLdapAllowSignup").prop("checked");
+
+        $("#chkAdminLdapAllowSignupOnlyForMappedUsers").prop("disabled", !ldapAllowSignup);
+    });
 });
 
 function login(username, password) {
@@ -664,17 +682,28 @@ function showMyProfileModal() {
 
             $("#mnuUserDisplayName").text(sessionData.displayName);
 
-            $("#txtMyProfileDisplayName").prop("disabled", responseJSON.response.isSsoUser);
             $("#txtMyProfileDisplayName").val(responseJSON.response.displayName);
             $("#txtMyProfileUsername").val(responseJSON.response.username);
 
-            if (responseJSON.response.isSsoUser) {
-                $("#lblMyProfileUserType").text("Remote/SSO");
-                $("#lblMyProfile2FAStatus").text("SSO Managed");
-            }
-            else {
-                $("#lblMyProfileUserType").text("Local");
-                $("#lblMyProfile2FAStatus").text(responseJSON.response.totpEnabled ? "Enabled" : "Disabled");
+            switch (responseJSON.response.type) {
+                case "RemoteSSO":
+                    $("#txtMyProfileDisplayName").prop("disabled", true);
+                    $("#lblMyProfileUserType").text("Remote/SSO");
+                    $("#lblMyProfile2FAStatus").text("SSO Managed");
+                    break;
+
+                case "RemoteLDAP":
+                    $("#txtMyProfileDisplayName").prop("disabled", true);
+                    $("#lblMyProfileUserType").text("Remote/LDAP");
+                    $("#lblMyProfile2FAStatus").text(responseJSON.response.totpEnabled ? "Enabled" : "Disabled");
+                    break;
+
+                case "Local":
+                default:
+                    $("#txtMyProfileDisplayName").prop("disabled", false);
+                    $("#lblMyProfileUserType").text(responseJSON.response.type);
+                    $("#lblMyProfile2FAStatus").text(responseJSON.response.totpEnabled ? "Enabled" : "Disabled");
+                    break;
             }
 
             $("#txtMyProfileSessionTimeout").val(responseJSON.response.sessionTimeoutSeconds);
@@ -851,6 +880,8 @@ function refreshAdminTab() {
         refreshAdminPermissions();
     else if ($("#adminTabListSso").hasClass("active"))
         refreshAdminSsoConfig();
+    else if ($("#adminTabListLdap").hasClass("active"))
+        refreshAdminLdapConfig();
     else if ($("#adminTabListCluster").hasClass("active"))
         refreshAdminCluster();
     else
@@ -1118,17 +1149,32 @@ function getAdminUsersRowHtml(id, user) {
     var userType;
     var totpStatus;
 
-    if (user.isSsoUser) {
-        userType = "Remote/SSO";
-        totpStatus = "<span class=\"label label-info\">SSO Managed</span>"
-    }
-    else {
-        userType = "Local";
+    switch (user.type) {
+        case "RemoteSSO":
+            userType = "Remote/SSO";
+            totpStatus = "<span class=\"label label-info\">SSO Managed</span>"
+            break;
 
-        if (user.totpEnabled)
-            totpStatus = "<span class=\"label label-success\">Enabled</span>";
-        else
-            totpStatus = "<span class=\"label label-default\">Disabled</span>";
+        case "RemoteLDAP":
+            userType = "Remote/LDAP";
+
+            if (user.totpEnabled)
+                totpStatus = "<span class=\"label label-success\">Enabled</span>";
+            else
+                totpStatus = "<span class=\"label label-default\">Disabled</span>";
+
+            break;
+
+        case "Local":
+        default:
+            userType = user.type;
+
+            if (user.totpEnabled)
+                totpStatus = "<span class=\"label label-success\">Enabled</span>";
+            else
+                totpStatus = "<span class=\"label label-default\">Disabled</span>";
+
+            break;
     }
 
     var status;
@@ -1150,11 +1196,16 @@ function getAdminUsersRowHtml(id, user) {
     tableHtmlRows += "<li id=\"mnuAdminUserRowEnable" + id + "\"" + (user.disabled ? "" : " style=\"display: none;\"") + "><a href=\"#\" data-id=\"" + id + "\" data-username=\"" + htmlEncode(user.username) + "\" onclick=\"enableUser(this); return false;\">Enable</a></li>";
     tableHtmlRows += "<li id=\"mnuAdminUserRowDisable" + id + "\"" + (!user.disabled ? "" : " style=\"display: none;\"") + "><a href=\"#\" data-id=\"" + id + "\" data-username=\"" + htmlEncode(user.username) + "\" onclick=\"disableUser(this); return false;\">Disable</a></li>";
 
-    if (!user.isSsoUser) {
+    if (user.type == "Local")
         tableHtmlRows += "<li><a href=\"#\" data-id=\"" + id + "\" data-username=\"" + htmlEncode(user.username) + "\" onclick=\"showResetUserPasswordModal(this); return false;\">Reset Password</a></li>";
 
-        if (user.totpEnabled)
-            tableHtmlRows += "<li><a href=\"#\" data-id=\"" + id + "\" data-username=\"" + htmlEncode(user.username) + "\" onclick=\"adminDisable2FA(this); return false;\">Disable 2FA</a></li>";
+    switch (user.type) {
+        case "RemoteLDAP":
+        case "Local":
+            if (user.totpEnabled)
+                tableHtmlRows += "<li><a href=\"#\" data-id=\"" + id + "\" data-username=\"" + htmlEncode(user.username) + "\" onclick=\"adminDisable2FA(this); return false;\">Disable 2FA</a></li>";
+
+            break;
     }
 
     tableHtmlRows += "<li role=\"separator\" class=\"divider\"></li>";
@@ -1265,19 +1316,31 @@ function showUserDetailsModal(objMenuItem) {
         url: "api/admin/users/get?user=" + encodeURIComponent(username) + "&includeGroups=true",
         token: sessionData.token,
         success: function (responseJSON) {
-            $("#txtUserDetailsDisplayName").prop("disabled", responseJSON.response.isSsoUser);
             $("#txtUserDetailsDisplayName").val(responseJSON.response.displayName);
-
-            $("#txtUserDetailsUsername").prop("disabled", responseJSON.response.isSsoUser);
             $("#txtUserDetailsUsername").val(responseJSON.response.username);
 
-            if (responseJSON.response.isSsoUser) {
-                $("#lblUserDetailsUserType").text("Remote/SSO");
-                $("#lblUserDetails2FAStatus").text("SSO Managed");
-            }
-            else {
-                $("#lblUserDetailsUserType").text("Local");
-                $("#lblUserDetails2FAStatus").text(responseJSON.response.totpEnabled ? "Enabled" : "Disabled");
+            switch (responseJSON.response.type) {
+                case "RemoteSSO":
+                    $("#txtUserDetailsDisplayName").prop("disabled", true);
+                    $("#txtUserDetailsUsername").prop("disabled", true);
+                    $("#lblUserDetailsUserType").text("Remote/SSO");
+                    $("#lblUserDetails2FAStatus").text("SSO Managed");
+                    break;
+
+                case "RemoteLDAP":
+                    $("#txtUserDetailsDisplayName").prop("disabled", true);
+                    $("#txtUserDetailsUsername").prop("disabled", true);
+                    $("#lblUserDetailsUserType").text("Remote/LDAP");
+                    $("#lblUserDetails2FAStatus").text(responseJSON.response.totpEnabled ? "Enabled" : "Disabled");
+                    break;
+
+                case "Local":
+                default:
+                    $("#txtUserDetailsDisplayName").prop("disabled", false);
+                    $("#txtUserDetailsUsername").prop("disabled", false);
+                    $("#lblUserDetailsUserType").text(responseJSON.response.type);
+                    $("#lblUserDetails2FAStatus").text(responseJSON.response.totpEnabled ? "Enabled" : "Disabled");
+                    break;
             }
 
             $("#chkUserDetailsDisableAccount").prop("checked", responseJSON.response.disabled);
@@ -1289,8 +1352,8 @@ function showUserDetailsModal(objMenuItem) {
                 memberOf += htmlEncode(responseJSON.response.memberOfGroups[i]) + "\n";
             }
 
-            $("#txtUserDetailsMemberOf").prop("disabled", responseJSON.response.isSsoUser && responseJSON.response.ssoManagedGroups)
-            $("#optUserDetailsGroupList").prop("disabled", responseJSON.response.isSsoUser && responseJSON.response.ssoManagedGroups)
+            $("#txtUserDetailsMemberOf").prop("disabled", responseJSON.response.remotelyManagedGroups)
+            $("#optUserDetailsGroupList").prop("disabled", responseJSON.response.remotelyManagedGroups)
 
             $("#txtUserDetailsMemberOf").val(memberOf);
 
@@ -2191,6 +2254,7 @@ function loadAdminSsoConfig(responseJSON) {
         addAdminSsoScopesRow(responseJSON.response.ssoScopes[i]);
 
     $("#chkAdminSsoAllowSignup").prop("checked", responseJSON.response.ssoAllowSignup);
+    $("#chkAdminSsoAllowSignupOnlyForMappedUsers").prop("disabled", !responseJSON.response.ssoAllowSignup);
     $("#chkAdminSsoAllowSignupOnlyForMappedUsers").prop("checked", responseJSON.response.ssoAllowSignupOnlyForMappedUsers);
 
     $("#tableAdminSsoGroupMap").html("");
@@ -2280,14 +2344,14 @@ function saveAdminSsoConfig(objBtn) {
         ssoGroupMap = false;
 
     if (ssoAuthority.startsWith("http:")) {
-        if (!confirm("WARNING! The SSO Authority must use a 'https' URL scheme for production environment. Are you sure you want to proceed with using a 'http' URL scheme?")) {
+        if (!confirm("WARNING! The SSO Authority must use a 'https' URL scheme for production environment. \n\nAre you sure you want to proceed with using a 'http' URL scheme?")) {
             $("#txtAdminSsoAuthority").trigger("focus");
             return;
         }
     }
 
     if (ssoMetadataAddress.startsWith("http:")) {
-        if (!confirm("WARNING! The Metadata Address must use a 'https' URL scheme for production environment. Are you sure you want to proceed with using a 'http' URL scheme?")) {
+        if (!confirm("WARNING! The Metadata Address must use a 'https' URL scheme for production environment. \n\nAre you sure you want to proceed with using a 'http' URL scheme?")) {
             $("#txtAdminSsoMetadataAddress").trigger("focus");
             return;
         }
@@ -2305,6 +2369,199 @@ function saveAdminSsoConfig(objBtn) {
             btn.button("reset");
 
             showAlert("success", "SSO Config Saved!", "Single Sign-On (SSO) config was saved successfully.");
+        },
+        error: function () {
+            btn.button("reset");
+        },
+        invalidToken: function () {
+            btn.button("reset");
+            showPageLogin();
+        }
+    });
+}
+
+function refreshAdminLdapConfig() {
+    var divAdminLdapLoader = $("#divAdminLdapLoader");
+    var divAdminLdapView = $("#divAdminLdapView");
+
+    divAdminLdapLoader.show();
+    divAdminLdapView.hide();
+
+    HTTPRequest({
+        url: "api/admin/ldap/get?includeGroups=true",
+        token: sessionData.token,
+        success: function (responseJSON) {
+            localGroups = responseJSON.response.localGroups;
+
+            loadAdminLdapConfig(responseJSON);
+
+            divAdminLdapLoader.hide();
+            divAdminLdapView.show();
+        },
+        invalidToken: function () {
+            showPageLogin();
+        },
+        objLoaderPlaceholder: divAdminLdapLoader
+    });
+}
+
+function loadAdminLdapConfig(responseJSON) {
+    $("#chkAdminLdapEnabled").prop("checked", responseJSON.response.ldapEnabled);
+    $("#txtAdminLdapServer").val(responseJSON.response.ldapServer);
+    $("#txtAdminLdapPort").val(responseJSON.response.ldapPort);
+
+    switch (responseJSON.response.ldapSslOption) {
+        case "StartTLS":
+            $("#rdLdapSslOptionStartTLS").prop("checked", true);
+            break;
+
+        case "LDAPS":
+            $("#rdLdapSslOptionLDAPS").prop("checked", true);
+            break;
+
+        case "None":
+        default:
+            $("#rdLdapSslOptionNone").prop("checked", true);
+            break;
+    }
+
+    $("#chkAdminLdapIgnoreSslErrors").prop("disabled", responseJSON.response.ldapSslOption == "None");
+    $("#chkAdminLdapIgnoreSslErrors").prop("checked", responseJSON.response.ldapIgnoreSslErrors);
+
+    $("#txtAdminLdapBindUsername").val(responseJSON.response.ldapBindUsername);
+    $("#txtAdminLdapBindPassword").val(responseJSON.response.ldapBindPassword);
+    $("#txtAdminLdapSearchBase").val(responseJSON.response.ldapSearchBase);
+    $("#txtAdminLdapUserSearchFilter").val(responseJSON.response.ldapUserSearchFilter);
+    $("#txtAdminLdapGroupAttribute").val(responseJSON.response.ldapGroupAttribute);
+
+    $("#chkAdminLdapAllowSignup").prop("checked", responseJSON.response.ldapAllowSignup);
+    $("#chkAdminLdapAllowSignupOnlyForMappedUsers").prop("disabled", !responseJSON.response.ldapAllowSignup);
+    $("#chkAdminLdapAllowSignupOnlyForMappedUsers").prop("checked", responseJSON.response.ldapAllowSignupOnlyForMappedUsers);
+
+    $("#tableAdminLdapGroupMap").html("");
+
+    for (var i = 0; i < responseJSON.response.ldapGroupMap.length; i++)
+        addAdminLdapGroupMapRow(responseJSON.response.ldapGroupMap[i].remoteGroup, responseJSON.response.ldapGroupMap[i].localGroup);
+}
+
+function addAdminLdapGroupMapRow(remoteGroup, localGroup) {
+    var id = Math.floor(Math.random() * 10000);
+
+    var tableHtmlRows = "<tr id=\"tableAdminLdapGroupMapRow" + id + "\"><td><input type=\"text\" class=\"form-control\" value=\"" + htmlEncode(remoteGroup) + "\"></td>";
+
+    tableHtmlRows += "<td><select class=\"form-control\">";
+
+    for (var i = 0; i < localGroups.length; i++)
+        tableHtmlRows += "<option" + (localGroups[i] == localGroup ? " selected" : "") + ">" + htmlEncode(localGroups[i]) + "</option>";
+
+    tableHtmlRows += "</select></td>";
+
+    tableHtmlRows += "<td><button type=\"button\" class=\"btn btn-danger\" onclick=\"$('#tableAdminLdapGroupMapRow" + id + "').remove();\">Delete</button></td></tr>";
+
+    $("#tableAdminLdapGroupMap").append(tableHtmlRows);
+}
+
+function saveAdminLdapConfig(objBtn) {
+    var btn = $(objBtn);
+
+    var ldapEnabled = $("#chkAdminLdapEnabled").prop("checked");
+
+    var ldapServer = $("#txtAdminLdapServer").val();
+    if (ldapEnabled && (ldapServer === "")) {
+        showAlert("warning", "Missing!", "Please enter the LDAP Server address.");
+        $("#txtAdminLdapServer").trigger("focus");
+        return;
+    }
+
+    var ldapPort = $("#txtAdminLdapPort").val();
+    if (ldapEnabled && (ldapPort === "")) {
+        showAlert("warning", "Missing!", "Please enter the LDAP Port.");
+        $("#txtAdminLdapPort").trigger("focus");
+        return;
+    }
+
+    var ldapSslOption = $("input[name=rdLdapSslOption]:checked").val();
+    var ldapIgnoreSslErrors = $("#chkAdminLdapIgnoreSslErrors").prop("checked");
+    var ldapBindUsername = $("#txtAdminLdapBindUsername").val();
+    var ldapBindPassword = $("#txtAdminLdapBindPassword").val();
+    var ldapSearchBase = $("#txtAdminLdapSearchBase").val();
+    var ldapUserSearchFilter = $("#txtAdminLdapUserSearchFilter").val();
+    var ldapGroupAttribute = $("#txtAdminLdapGroupAttribute").val();
+    var ldapAllowSignup = $("#chkAdminLdapAllowSignup").prop("checked");
+    var ldapAllowSignupOnlyForMappedUsers = $("#chkAdminLdapAllowSignupOnlyForMappedUsers").prop("checked");
+
+    var ldapGroupMap = serializeTableData($("#tableAdminLdapGroupMap"), 2);
+    if (ldapGroupMap === false)
+        return;
+
+    if (ldapGroupMap.length == 0)
+        ldapGroupMap = false;
+
+    if (ldapIgnoreSslErrors && (ldapSslOption != "None")) {
+        if (!confirm("WARNING! The Ignore SSL Certificate Errors option must not be enabled for production environment. \n\nAre you sure you want to proceed with ignoring SSL certificate errors?")) {
+            $("#chkAdminLdapIgnoreSslErrors").trigger("focus");
+            return;
+        }
+    }
+
+    btn.button("loading");
+
+    HTTPRequest({
+        url: "api/admin/ldap/set",
+        token: sessionData.token,
+        method: "POST",
+        data: "ldapEnabled=" + ldapEnabled + "&ldapServer=" + encodeURIComponent(ldapServer) + "&ldapPort=" + ldapPort + "&ldapSslOption=" + ldapSslOption + "&ldapIgnoreSslErrors=" + ldapIgnoreSslErrors + "&ldapBindUsername=" + encodeURIComponent(ldapBindUsername) + "&ldapBindPassword=" + encodeURIComponent(ldapBindPassword) + "&ldapSearchBase=" + encodeURIComponent(ldapSearchBase) + "&ldapUserSearchFilter=" + encodeURIComponent(ldapUserSearchFilter) + "&ldapGroupAttribute=" + encodeURIComponent(ldapGroupAttribute) + "&ldapAllowSignup=" + ldapAllowSignup + "&ldapAllowSignupOnlyForMappedUsers=" + ldapAllowSignupOnlyForMappedUsers + "&ldapGroupMap=" + encodeURIComponent(ldapGroupMap),
+        success: function (responseJSON) {
+            loadAdminLdapConfig(responseJSON);
+            btn.button("reset");
+
+            showAlert("success", "LDAP Config Saved!", "LDAP authentication config was saved successfully.");
+        },
+        error: function () {
+            btn.button("reset");
+        },
+        invalidToken: function () {
+            btn.button("reset");
+            showPageLogin();
+        }
+    });
+}
+
+function testAdminLdapConnection(objBtn) {
+    var btn = $(objBtn);
+
+    var ldapServer = $("#txtAdminLdapServer").val();
+    if (ldapServer === "") {
+        showAlert("warning", "Missing!", "Please enter the LDAP Server address.");
+        $("#txtAdminLdapServer").trigger("focus");
+        return;
+    }
+
+    var ldapPort = $("#txtAdminLdapPort").val();
+    if (ldapPort === "") {
+        showAlert("warning", "Missing!", "Please enter the LDAP Port.");
+        $("#txtAdminLdapPort").trigger("focus");
+        return;
+    }
+
+    var ldapSslOption = $("input[name=rdLdapSslOption]:checked").val();
+    var ldapIgnoreSslErrors = $("#chkAdminLdapIgnoreSslErrors").prop("checked");
+    var ldapBindUsername = $("#txtAdminLdapBindUsername").val();
+    var ldapBindPassword = $("#txtAdminLdapBindPassword").val();
+    var ldapSearchBase = $("#txtAdminLdapSearchBase").val();
+    var ldapUserSearchFilter = $("#txtAdminLdapUserSearchFilter").val();
+    var ldapGroupAttribute = $("#txtAdminLdapGroupAttribute").val();
+
+    btn.button("loading");
+
+    HTTPRequest({
+        url: "api/admin/ldap/test",
+        token: sessionData.token,
+        method: "POST",
+        data: "ldapServer=" + encodeURIComponent(ldapServer) + "&ldapPort=" + ldapPort + "&ldapSslOption=" + ldapSslOption + "&ldapIgnoreSslErrors=" + ldapIgnoreSslErrors + "&ldapBindUsername=" + encodeURIComponent(ldapBindUsername) + "&ldapBindPassword=" + encodeURIComponent(ldapBindPassword) + "&ldapSearchBase=" + encodeURIComponent(ldapSearchBase) + "&ldapUserSearchFilter=" + encodeURIComponent(ldapUserSearchFilter) + "&ldapGroupAttribute=" + encodeURIComponent(ldapGroupAttribute),
+        success: function (responseJSON) {
+            btn.button("reset");
+            showAlert("success", "Test Successful!", "LDAP connection test completed successfully.");
         },
         error: function () {
             btn.button("reset");

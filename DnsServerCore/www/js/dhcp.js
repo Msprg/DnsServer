@@ -60,9 +60,9 @@ function refreshDhcpLeases() {
                     moment(dhcpLeases[i].leaseExpires).local().format("YYYY-MM-DD HH:mm");
 
                 tableHtmlRows += "</td><td><div class=\"dropdown\"><a href=\"#\" id=\"btnDhcpLeaseRowOption" + i + "\" class=\"dropdown-toggle\" data-toggle=\"dropdown\" aria-haspopup=\"true\" aria-expanded=\"true\"><span class=\"glyphicon glyphicon-option-vertical\" aria-hidden=\"true\"></span></a><ul class=\"dropdown-menu dropdown-menu-right\">";
-                tableHtmlRows += "<li id=\"btnDhcpLeaseReserve" + i + "\" style=\"" + (dhcpLeases[i].type === "Dynamic" ? "" : "display: none;") + "\"><a href=\"#\" onclick=\"convertToReservedLease(" + i + ", '" + dhcpLeases[i].scope + "', '" + dhcpLeases[i].clientIdentifier + "'); return false;\">Convert To Reserved Lease</a></li>";
-                tableHtmlRows += "<li id=\"btnDhcpLeaseUnreserve" + i + "\" style=\"" + (dhcpLeases[i].type === "Dynamic" ? "display: none;" : "") + "\"><a href=\"#\" onclick=\"convertToDynamicLease(" + i + ", '" + dhcpLeases[i].scope + "', '" + dhcpLeases[i].clientIdentifier + "'); return false;\">Convert To Dynamic Lease</a></li>";
-                tableHtmlRows += "<li><a href=\"#\" onclick=\"showRemoveLeaseModal(" + i + ", '" + dhcpLeases[i].scope + "', '" + dhcpLeases[i].clientIdentifier + "'); return false;\">Remove Lease</a></li>";
+                tableHtmlRows += "<li id=\"btnDhcpLeaseReserve" + i + "\" style=\"" + (dhcpLeases[i].type === "Dynamic" ? "" : "display: none;") + "\"><a href=\"#\" data-scope-name=\"" + htmlEncode(dhcpLeases[i].scope) + "\" onclick=\"convertToReservedLease(" + i + ", $(this).attr('data-scope-name'), '" + dhcpLeases[i].clientIdentifier + "'); return false;\">Convert To Reserved Lease</a></li>";
+                tableHtmlRows += "<li id=\"btnDhcpLeaseUnreserve" + i + "\" style=\"" + (dhcpLeases[i].type === "Dynamic" ? "display: none;" : "") + "\"><a href=\"#\" data-scope-name=\"" + htmlEncode(dhcpLeases[i].scope) + "\" onclick=\"convertToDynamicLease(" + i + ", $(this).attr('data-scope-name'), '" + dhcpLeases[i].clientIdentifier + "'); return false;\">Convert To Dynamic Lease</a></li>";
+                tableHtmlRows += "<li><a href=\"#\" data-scope-name=\"" + htmlEncode(dhcpLeases[i].scope) + "\" onclick=\"showRemoveLeaseModal(" + i + ", $(this).attr('data-scope-name'), '" + dhcpLeases[i].clientIdentifier + "'); return false;\">Remove Lease</a></li>";
                 tableHtmlRows += "</ul></div></td></tr>";
             }
 
@@ -226,14 +226,14 @@ function refreshDhcpScopes(checkDisplay) {
 
             for (var i = 0; i < dhcpScopes.length; i++) {
                 tableHtmlRows += "<tr id=\"trDhcpScopeRow" + i + "\"><td>" + htmlEncode(dhcpScopes[i].name) + "</td><td>" + dhcpScopes[i].startingAddress + " - " + dhcpScopes[i].endingAddress + "<br />" + dhcpScopes[i].subnetMask + "</td><td>" + dhcpScopes[i].networkAddress + "<br />" + dhcpScopes[i].broadcastAddress + "</td><td>" + (dhcpScopes[i].interfaceAddress == null ? "" : dhcpScopes[i].interfaceAddress) + "</td>";
-                tableHtmlRows += "<td align=\"right\"><button type=\"button\" class=\"btn btn-primary\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" onclick=\"showEditDhcpScope('" + dhcpScopes[i].name + "');\">Edit</button>";
+                tableHtmlRows += "<td align=\"right\"><button type=\"button\" class=\"btn btn-primary\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" data-scope-name=\"" + htmlEncode(dhcpScopes[i].name) + "\" onclick=\"showEditDhcpScope($(this).attr('data-scope-name'));\">Edit</button>";
 
                 if (dhcpScopes[i].enabled)
-                    tableHtmlRows += "<button type=\"button\" class=\"btn btn-warning\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" onclick=\"disableDhcpScope('" + dhcpScopes[i].name + "');\">Disable</button>";
+                    tableHtmlRows += "<button type=\"button\" class=\"btn btn-warning\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" data-scope-name=\"" + htmlEncode(dhcpScopes[i].name) + "\" onclick=\"disableDhcpScope($(this).attr('data-scope-name'));\">Disable</button>";
                 else
-                    tableHtmlRows += "<button type=\"button\" class=\"btn btn-default\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" onclick=\"enableDhcpScope('" + dhcpScopes[i].name + "');\">Enable</button>";
+                    tableHtmlRows += "<button type=\"button\" class=\"btn btn-default\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" data-scope-name=\"" + htmlEncode(dhcpScopes[i].name) + "\" onclick=\"enableDhcpScope($(this).attr('data-scope-name'));\">Enable</button>";
 
-                tableHtmlRows += "<button type=\"button\" class=\"btn btn-danger\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" onclick=\"deleteDhcpScope(" + i + ", '" + dhcpScopes[i].name + "');\">Delete</button></td></tr>";
+                tableHtmlRows += "<button type=\"button\" class=\"btn btn-danger\" style=\"font-size: 12px; padding: 2px 0px; width: 60px; margin: 0 6px 6px 0;\" data-scope-name=\"" + htmlEncode(dhcpScopes[i].name) + "\" onclick=\"deleteDhcpScope(" + i + ", $(this).attr('data-scope-name'));\">Delete</button></td></tr>";
             }
 
             $("#tableDhcpScopesBody").html(tableHtmlRows);

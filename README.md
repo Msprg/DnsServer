@@ -19,10 +19,6 @@ Be it a home network or an organization's network, having a locally running DNS 
 
 # Sponsored By
 <p align="center">
-	<a href="https://althatech.com/" target="_blank"><img src="https://technitium.com/img/logo-althatech.png" width="250" alt="Altha Technology - Censorship Resistant Data Services" title="Altha Technology - Censorship Resistant Data Services" /></a>
-</p>
-<p align="center">
-	<a href="https://www.bartellhotels.com/" target="_blank"><img src="https://technitium.com/img/logo-bartell-hotels.png" width="300" alt="Bartell Hotels - San Diego's Unforgettable Locations" title="Bartell Hotels - San Diego's Unforgettable Locations" /></a>
 	<a href="https://www.wavspeed.com/" target="_blank"><img src="https://technitium.com/img/logo-wavspeed.png" width="350" alt="Technology Investors and Integrators | WavSpeed Inc | Texas" title="Technology Investors and Integrators | WavSpeed Inc | Texas" /></a>
 </p>
 
@@ -34,13 +30,14 @@ Be it a home network or an organization's network, having a locally running DNS 
 - Supports working as an authoritative as well as a recursive DNS server.
 - Includes built-in Clustering feature to allow managing two or more DNS Server instances from a single admin web console.
 - Supports Single Sign-On (SSO) with OpenID Connect (OIDC).
+- Supports LDAP authentication.
 - High performance DNS server based on async IO that can serve millions of requests per minute even on a commodity desktop PC hardware (load tested on Intel i7-8700 CPU with more than 100,000 request/second over Gigabit Ethernet).
 - Self host [DNS-over-TLS](https://www.rfc-editor.org/rfc/rfc7858.html), [DNS-over-HTTPS](https://www.rfc-editor.org/rfc/rfc8484.html), and [DNS-over-QUIC](https://www.ietf.org/rfc/rfc9250.html) DNS services on your network.
 - DNS-over-HTTPS implementation supports HTTP/1.1, HTTP/2, and HTTP/3 transport protocols.
 - Supports DNS over [PROXY protocol](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt) version 1 and 2 for both UDP and TCP transports.
 - Use public DNS resolvers like Cloudflare, Google, Quad9, or AdGuard with [DNS-over-TLS](https://www.rfc-editor.org/rfc/rfc7858.html), [DNS-over-HTTPS](https://www.rfc-editor.org/rfc/rfc8484.html), or [DNS-over-QUIC](https://www.ietf.org/rfc/rfc9250.html) protocols as forwarders.
 - Support for latency based name server selection algorithm that works with concurrency feature for both recursive resolution and forwarders.
-- Advanced caching with features like serve stale, prefetching and auto prefetching.
+- Advanced caching with features like Serve Stale and Prefetch.
 - Persistent caching feature that saves cache to disk when DNS Server restarts.
 - DNS rebinding attack protection feature available with DNS Rebinding Protection App.
 - DNSSEC validation support with RSA, ECDSA & EdDSA algorithms for recursive resolver, forwarders, and conditional forwarders with NSEC and NSEC3 support.

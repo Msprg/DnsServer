@@ -42,12 +42,15 @@ namespace DnsServerCore.Auth
         ConcurrentDictionary<PermissionSection, Permission> _permissions = new ConcurrentDictionary<PermissionSection, Permission>(1, 11);
         ConcurrentDictionary<string, UserSession> _sessions = new ConcurrentDictionary<string, UserSession>(1, 10);
 
+        Dictionary<string, UserSession> _staticSessions; //predefined static session via environment variables
+
         readonly ConcurrentDictionary<IPAddress, int> _failedLoginAttemptNetworks = new ConcurrentDictionary<IPAddress, int>(1, 10);
         const int MAX_LOGIN_ATTEMPTS = 5;
 
         readonly ConcurrentDictionary<IPAddress, DateTime> _blockedNetworks = new ConcurrentDictionary<IPAddress, DateTime>(1, 10);
         const int BLOCK_NETWORK_INTERVAL = 5 * 60 * 1000;
 
+        readonly DnsWebService _dnsWebService;
         readonly string _configFolder;
         readonly LogManager _log;
 
@@ -61,6 +64,20 @@ namespace DnsServerCore.Auth
         bool _ssoAllowSignupOnlyForMappedUsers = true;
         IReadOnlyDictionary<string, string> _ssoGroupMap;
 
+        bool _ldapEnabled;
+        string _ldapServer;
+        int _ldapPort = 389;
+        LdapAuthSslOption _ldapSslOption;
+        bool _ldapIgnoreSslErrors;
+        string _ldapBindUsername;
+        string _ldapBindPassword;
+        string _ldapSearchBase;
+        string _ldapUserSearchFilter;
+        string _ldapGroupAttribute;
+        bool _ldapAllowSignup;
+        bool _ldapAllowSignupOnlyForMappedUsers = true;
+        IReadOnlyDictionary<string, string> _ldapGroupMap;
+
         readonly Lock _saveLock = new Lock();
         bool _pendingSave;
         readonly Timer _saveTimer;
@@ -70,8 +87,9 @@ namespace DnsServerCore.Auth
 
         #region constructor
 
-        public AuthManager(string configFolder, LogManager log)
+        public AuthManager(DnsWebService dnsWebService, string configFolder, LogManager log)
         {
+            _dnsWebService = dnsWebService;
             _configFolder = configFolder;
             _log = log;
 
@@ -162,6 +180,47 @@ namespace DnsServerCore.Auth
                 }
 
                 _log.Write("DNS Server auth config file was loaded: " + configFile);
+
+                //load static sessions
+                if (_staticSessions is null)
+                {
+                    string strStaticSessions = Environment.GetEnvironmentVariable("DNS_SERVER_AUTH_STATIC_SESSIONS");
+                    if (!string.IsNullOrEmpty(strStaticSessions))
+                    {
+                        string[] strStaticSessionEntries = strStaticSessions.Split(",", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                        Dictionary<string, UserSession> staticSessions = new Dictionary<string, UserSession>(strStaticSessionEntries.Length);
+
+                        foreach (string strStaticSessionEntry in strStaticSessionEntries)
+                        {
+                            string[] parts = strStaticSessionEntry.Split(":", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            if (parts.Length != 2)
+                                continue;
+
+                            string username = parts[0];
+                            string token = parts[1];
+
+                            if (!_users.TryGetValue(username, out User user))
+                            {
+                                _log.Write($"Cannot load static session for user '{username}': no such user exist.");
+                                continue;
+                            }
+
+                            if (token.Length != 64)
+                            {
+                                _log.Write($"Cannot load static session for user '{username}': token length must be 64 bytes.");
+                                continue;
+                            }
+
+                            UserSession staticSession = new UserSession(token, user);
+
+                            if (!staticSessions.TryAdd(staticSession.Token, staticSession))
+                                _log.Write($"Cannot load static session for user '{username}': token is not unique.");
+                        }
+
+                        _staticSessions = staticSessions;
+                    }
+                }
 
                 if (passwordResetOption)
                 {
@@ -263,6 +322,81 @@ namespace DnsServerCore.Auth
                     SsoGroupMap = groupMap;
                 }
 
+                string strLdapEnabled = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_ENABLED");
+                if (!string.IsNullOrEmpty(strLdapEnabled))
+                    LdapEnabled = bool.Parse(strLdapEnabled);
+
+                string strLdapServer = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_SERVER");
+                if (!string.IsNullOrEmpty(strLdapServer))
+                    LdapServer = strLdapServer;
+
+                string strLdapPort = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_PORT");
+                if (!string.IsNullOrEmpty(strLdapPort))
+                    LdapPort = int.Parse(strLdapPort);
+
+                string strLdapSslOption = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_SSL_OPTION");
+                if (!string.IsNullOrEmpty(strLdapSslOption))
+                    LdapSslOption = Enum.Parse<LdapAuthSslOption>(strLdapSslOption, true);
+
+                string strLdapIgnoreSslErrors = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_IGNORE_SSL_ERRORS");
+                if (!string.IsNullOrEmpty(strLdapIgnoreSslErrors))
+                    LdapIgnoreSslErrors = bool.Parse(strLdapIgnoreSslErrors);
+
+                string strLdapBindUsername = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_BIND_USERNAME");
+                if (!string.IsNullOrEmpty(strLdapBindUsername))
+                    LdapBindUsername = strLdapBindUsername;
+
+                string strLdapBindPassword = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_BIND_PASSWORD");
+                string strLdapBindPasswordFile = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_BIND_PASSWORD_FILE");
+
+                if (!string.IsNullOrEmpty(strLdapBindPassword))
+                {
+                    LdapBindPassword = strLdapBindPassword;
+                }
+                else if (!string.IsNullOrEmpty(strLdapBindPasswordFile))
+                {
+                    using (StreamReader sR = new StreamReader(strLdapBindPasswordFile, true))
+                    {
+                        LdapBindPassword = sR.ReadLine();
+                    }
+                }
+
+                string strLdapSearchBase = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_SEARCH_BASE");
+                if (!string.IsNullOrEmpty(strLdapSearchBase))
+                    LdapSearchBase = strLdapSearchBase;
+
+                string strLdapUserSearchFilter = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_USER_SEARCH_FILTER");
+                if (!string.IsNullOrEmpty(strLdapUserSearchFilter))
+                    LdapUserSearchFilter = strLdapUserSearchFilter;
+
+                string strLdapGroupAttribute = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_GROUP_ATTRIBUTE");
+                if (!string.IsNullOrEmpty(strLdapGroupAttribute))
+                    LdapGroupAttribute = strLdapGroupAttribute;
+
+                string strLdapAllowSignup = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_ALLOW_SIGNUP");
+                if (!string.IsNullOrEmpty(strLdapAllowSignup))
+                    LdapAllowSignup = bool.Parse(strLdapAllowSignup);
+
+                string strLdapAllowSignupOnlyForMappedUsers = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_ALLOW_SIGNUP_ONLY_FOR_MAPPED_USERS");
+                if (!string.IsNullOrEmpty(strLdapAllowSignupOnlyForMappedUsers))
+                    LdapAllowSignupOnlyForMappedUsers = bool.Parse(strLdapAllowSignupOnlyForMappedUsers);
+
+                string strLdapGroupMap = Environment.GetEnvironmentVariable("DNS_SERVER_LDAP_GROUP_MAP");
+                if (!string.IsNullOrEmpty(strLdapGroupMap))
+                {
+                    string[] entries = strLdapGroupMap.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    Dictionary<string, string> groupMap = new Dictionary<string, string>(entries.Length);
+
+                    foreach (string entry in entries)
+                    {
+                        string[] parts = entry.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        if (parts.Length == 2)
+                            groupMap.TryAdd(parts[0], parts[1]);
+                    }
+
+                    LdapGroupMap = groupMap;
+                }
+
                 lock (_saveLock)
                 {
                     SaveConfigFileInternal();
@@ -343,18 +477,9 @@ namespace DnsServerCore.Auth
             string tmpConfigFile = Path.Combine(_configFolder, "auth.tmp");
             string configFile = Path.Combine(_configFolder, "auth.config");
 
-            using (MemoryStream mS = new MemoryStream())
+            using (FileStream fS = new FileStream(tmpConfigFile, FileMode.Create, FileAccess.Write))
             {
-                //serialize config
-                WriteConfigTo(mS);
-
-                //write config
-                mS.Position = 0;
-
-                using (FileStream fS = new FileStream(tmpConfigFile, FileMode.Create, FileAccess.Write))
-                {
-                    mS.CopyTo(fS);
-                }
+                WriteConfigTo(fS);
             }
 
             File.Move(tmpConfigFile, configFile, true);
@@ -401,6 +526,7 @@ namespace DnsServerCore.Auth
                 case 1:
                 case 2:
                 case 3:
+                case 4:
                     {
                         int count = bR.ReadByte();
 
@@ -546,6 +672,64 @@ namespace DnsServerCore.Auth
                         restartWebService = !ssoIsStillDisabled && restartWebService;
                     }
 
+                    if (version >= 4)
+                    {
+                        _ldapEnabled = bR.ReadBoolean();
+
+                        _ldapServer = s.ReadShortString();
+                        if (_ldapServer.Length == 0)
+                            _ldapServer = null;
+
+                        _ldapPort = bR.ReadInt32();
+                        _ldapSslOption = (LdapAuthSslOption)bR.ReadByte();
+                        _ldapIgnoreSslErrors = bR.ReadBoolean();
+
+                        _ldapBindUsername = s.ReadShortString();
+                        if (_ldapBindUsername.Length == 0)
+                            _ldapBindUsername = null;
+
+                        _ldapBindPassword = s.ReadShortString();
+                        if (_ldapBindPassword.Length == 0)
+                            _ldapBindPassword = null;
+
+                        _ldapSearchBase = s.ReadShortString();
+                        if (_ldapSearchBase.Length == 0)
+                            _ldapSearchBase = null;
+
+                        _ldapUserSearchFilter = s.ReadShortString();
+                        if (_ldapUserSearchFilter.Length == 0)
+                            _ldapUserSearchFilter = null;
+
+                        _ldapGroupAttribute = s.ReadShortString();
+                        if (_ldapGroupAttribute.Length == 0)
+                            _ldapGroupAttribute = null;
+
+                        _ldapAllowSignup = bR.ReadBoolean();
+                        _ldapAllowSignupOnlyForMappedUsers = bR.ReadBoolean();
+
+                        {
+                            int count = bR.ReadByte();
+                            if (count > 0)
+                            {
+                                Dictionary<string, string> ldapGroupMap = new Dictionary<string, string>(count);
+
+                                for (int i = 0; i < count; i++)
+                                {
+                                    string key = s.ReadShortString();
+                                    string value = s.ReadShortString();
+
+                                    ldapGroupMap.TryAdd(key, value);
+                                }
+
+                                _ldapGroupMap = ldapGroupMap;
+                            }
+                            else
+                            {
+                                _ldapGroupMap = null;
+                            }
+                        }
+                    }
+
                     break;
 
                 default:
@@ -616,7 +800,7 @@ namespace DnsServerCore.Auth
             BinaryWriter bW = new BinaryWriter(s);
 
             bW.Write(Encoding.ASCII.GetBytes("AS")); //format
-            bW.Write((byte)3); //version
+            bW.Write((byte)4); //version
 
             bW.Write(Convert.ToByte(_groups.Count));
 
@@ -649,26 +833,10 @@ namespace DnsServerCore.Auth
                 session.WriteTo(bW);
 
             bW.Write(_ssoEnabled);
-
-            if (_ssoAuthority is null)
-                s.WriteShortString("");
-            else
-                s.WriteShortString(_ssoAuthority.OriginalString);
-
-            if (_ssoClientId is null)
-                s.WriteShortString("");
-            else
-                s.WriteShortString(_ssoClientId);
-
-            if (_ssoClientSecret is null)
-                s.WriteShortString("");
-            else
-                s.WriteShortString(_ssoClientSecret);
-
-            if (_ssoMetadataAddress is null)
-                s.WriteShortString("");
-            else
-                s.WriteShortString(_ssoMetadataAddress.OriginalString);
+            s.WriteShortString(_ssoAuthority?.OriginalString ?? "");
+            s.WriteShortString(_ssoClientId ?? "");
+            s.WriteShortString(_ssoClientSecret ?? "");
+            s.WriteShortString(_ssoMetadataAddress?.OriginalString ?? "");
 
             if (_ssoScopes.Count == 0)
             {
@@ -694,6 +862,34 @@ namespace DnsServerCore.Auth
                 bW.Write(Convert.ToByte(_ssoGroupMap.Count));
 
                 foreach (KeyValuePair<string, string> entry in _ssoGroupMap)
+                {
+                    s.WriteShortString(entry.Key);
+                    s.WriteShortString(entry.Value);
+                }
+            }
+
+            bW.Write(_ldapEnabled);
+            s.WriteShortString(_ldapServer ?? "");
+            bW.Write(_ldapPort);
+            bW.Write((byte)_ldapSslOption);
+            bW.Write(_ldapIgnoreSslErrors);
+            s.WriteShortString(_ldapBindUsername ?? "");
+            s.WriteShortString(_ldapBindPassword ?? "");
+            s.WriteShortString(_ldapSearchBase ?? "");
+            s.WriteShortString(_ldapUserSearchFilter ?? "");
+            s.WriteShortString(_ldapGroupAttribute ?? "");
+            bW.Write(_ldapAllowSignup);
+            bW.Write(_ldapAllowSignupOnlyForMappedUsers);
+
+            if ((_ldapGroupMap is null) || (_ldapGroupMap.Count == 0))
+            {
+                bW.Write((byte)0);
+            }
+            else
+            {
+                bW.Write(Convert.ToByte(_ldapGroupMap.Count));
+
+                foreach (KeyValuePair<string, string> entry in _ldapGroupMap)
                 {
                     s.WriteShortString(entry.Key);
                     s.WriteShortString(entry.Value);
@@ -787,19 +983,147 @@ namespace DnsServerCore.Auth
 
             User user = GetUser(username);
 
-            if ((user is null) || user.IsSsoUser || !user.PasswordHash.Equals(user.GetPasswordHashFor(password), StringComparison.Ordinal))
+            if (user is null)
             {
-                if ((username != "admin") || (password != "admin"))
+                //no such user was found
+                if (_ldapEnabled && !string.IsNullOrEmpty(_ldapServer))
                 {
-                    MarkFailedLoginAttempt(network);
+                    try
+                    {
+                        //try LDAP authentication and auto-provision if allowed
+                        LdapAuthProvider ldapProvider = new LdapAuthProvider(_dnsWebService.DnsServer, _ldapServer, _ldapPort, _ldapSslOption, _ldapIgnoreSslErrors, _ldapBindUsername, _ldapBindPassword, _ldapSearchBase, _ldapUserSearchFilter, _ldapGroupAttribute);
+                        LdapAuthProvider.AuthInfo authInfo = await ldapProvider.AuthenticateAsync(username, password);
 
-                    if (HasLoginAttemptExceedLimit(network, MAX_LOGIN_ATTEMPTS))
-                        BlockNetwork(network, BLOCK_NETWORK_INTERVAL);
+                        if (!_ldapAllowSignup)
+                            throw new DnsWebServiceException("LDAP authentication succeeded for '" + username + "' but new user sign up is disabled. Please contact your administrator.");
+
+                        if (_ldapAllowSignupOnlyForMappedUsers && (_ldapGroupMap is not null))
+                        {
+                            bool hasMappedGroup = false;
+
+                            foreach (string remoteGroup in authInfo.Groups)
+                            {
+                                if (_ldapGroupMap.ContainsKey(remoteGroup))
+                                {
+                                    hasMappedGroup = true;
+                                    break;
+                                }
+                            }
+
+                            if (!hasMappedGroup)
+                                throw new DnsWebServiceException("LDAP authentication succeeded for '" + username + "' but new user sign up is restricted only to members of mapped groups. Please contact your administrator.");
+                        }
+
+                        //create new user
+                        user = CreateLdapUser(authInfo.DisplayName, username);
+
+                        if (_ldapGroupMap is not null)
+                        {
+                            foreach (string remoteGroup in authInfo.Groups)
+                            {
+                                if (_ldapGroupMap.TryGetValue(remoteGroup, out string localGroupName))
+                                {
+                                    Group localGroup = GetGroup(localGroupName);
+                                    if (localGroup is not null)
+                                        user.AddToGroup(localGroup);
+                                }
+                            }
+                        }
+
+                        _log.Write(new IPEndPoint(remoteAddress, 0), "LDAP user account was created successfully with username: " + user.Username + " (displayName: " + user.DisplayName + ")");
+                        SaveConfigFile();
+
+                        ResetFailedLoginAttempts(network);
+
+                        return user;
+                    }
+                    catch (LdapAuthFailedException ex)
+                    {
+                        _log.Write(ex);
+                        await ThrowAuthFailedExceptionAsync(innerException: ex);
+                    }
+                    catch (LdapAuthException ex)
+                    {
+                        //do not throw exception to hide LDAP failure message from unknown user
+                        _log.Write(ex);
+                    }
+                    catch (DnsWebServiceException)
+                    {
+                        //throw web service exceptions to allow showing error message to the user
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Write(ex);
+                    }
                 }
 
-                await Task.Delay(1000);
+                await ThrowAuthFailedExceptionAsync();
+                throw new InvalidOperationException();
+            }
 
-                throw new DnsWebServiceException("Invalid username or password for user: " + username);
+            switch (user.Type)
+            {
+                case UserType.RemoteSSO:
+                    //SSO users cannot authenticate locally
+                    await ThrowAuthFailedExceptionAsync();
+                    throw new InvalidOperationException();
+
+                case UserType.RemoteLDAP:
+                    //ldap authentication
+                    if (!_ldapEnabled || string.IsNullOrEmpty(_ldapServer))
+                        throw new DnsWebServiceException("LDAP authentication is not configured.");
+
+                    try
+                    {
+                        LdapAuthProvider ldapProvider = new LdapAuthProvider(_dnsWebService.DnsServer, _ldapServer, _ldapPort, _ldapSslOption, _ldapIgnoreSslErrors, _ldapBindUsername, _ldapBindPassword, _ldapSearchBase, _ldapUserSearchFilter, _ldapGroupAttribute);
+                        LdapAuthProvider.AuthInfo authInfo = await ldapProvider.AuthenticateAsync(username, password);
+
+                        //sync display name
+                        user.DisplayName = authInfo.DisplayName;
+
+                        //sync group memberships
+                        if (_ldapGroupMap is not null)
+                        {
+                            Dictionary<string, Group> groups = new Dictionary<string, Group>(4);
+
+                            foreach (string remoteGroup in authInfo.Groups)
+                            {
+                                if (_ldapGroupMap.TryGetValue(remoteGroup, out string localGroupName))
+                                {
+                                    Group localGroup = GetGroup(localGroupName);
+                                    if (localGroup is not null)
+                                        groups[localGroup.Name.ToLowerInvariant()] = localGroup;
+                                }
+                            }
+
+                            Group everyone = GetGroup(Group.EVERYONE);
+                            groups[everyone.Name.ToLowerInvariant()] = everyone;
+
+                            user.SyncGroups(groups);
+                        }
+                    }
+                    catch (LdapAuthFailedException ex)
+                    {
+                        await ThrowAuthFailedExceptionAsync(innerException: ex);
+                        throw;
+                    }
+                    catch (LdapAuthException ex)
+                    {
+                        throw new DnsWebServiceException("Failed to authenticate with LDAP. Please contact your administrator.", ex);
+                    }
+
+                    //proceed to TOTP
+                    break;
+
+                case UserType.Local:
+                default:
+                    //local authentication
+                    if (!user.PasswordHash.Equals(user.GetPasswordHashFor(password), StringComparison.Ordinal))
+                        await ThrowAuthFailedExceptionAsync();
+
+                    //proceed to TOTP
+                    break;
             }
 
             if (user.TOTPEnabled)
@@ -810,16 +1134,7 @@ namespace DnsServerCore.Auth
                 Authenticator authenticator = new Authenticator(user.TOTPKeyUri);
 
                 if (!authenticator.IsTOTPValid(totp))
-                {
-                    MarkFailedLoginAttempt(network);
-
-                    if (HasLoginAttemptExceedLimit(network, MAX_LOGIN_ATTEMPTS))
-                        BlockNetwork(network, BLOCK_NETWORK_INTERVAL);
-
-                    await Task.Delay(1000);
-
-                    throw new DnsWebServiceException("Invalid time-based one-time password (TOTP) was attempted for user: " + username);
-                }
+                    await ThrowAuthFailedExceptionAsync("Invalid time-based one-time password (TOTP) was attempted for user: " + username);
             }
 
             ResetFailedLoginAttempts(network);
@@ -828,6 +1143,18 @@ namespace DnsServerCore.Auth
                 throw new DnsWebServiceException("User account is disabled. Please contact your administrator.");
 
             return user;
+
+            async Task ThrowAuthFailedExceptionAsync(string message = null, Exception innerException = null)
+            {
+                MarkFailedLoginAttempt(network);
+
+                if (HasLoginAttemptExceedLimit(network, MAX_LOGIN_ATTEMPTS))
+                    BlockNetwork(network, BLOCK_NETWORK_INTERVAL);
+
+                await Task.Delay(1000);
+
+                throw new DnsWebServiceException(message ?? "Invalid username or password for user: " + username, innerException);
+            }
         }
 
         private static IPAddress GetClientNetwork(IPAddress address)
@@ -910,7 +1237,7 @@ namespace DnsServerCore.Auth
         {
             foreach (KeyValuePair<string, User> user in _users)
             {
-                if (ssoIdentifier.Equals(user.Value.SsoIdentifier, StringComparison.Ordinal) && user.Value.IsSsoUser)
+                if (ssoIdentifier.Equals(user.Value.SsoIdentifier, StringComparison.Ordinal) && (user.Value.Type == UserType.RemoteSSO))
                     return user.Value;
             }
 
@@ -965,11 +1292,35 @@ namespace DnsServerCore.Auth
             throw new DnsWebServiceException("User already exists: " + username);
         }
 
+        public User CreateLdapUser(string displayName, string username)
+        {
+            if (_users.Count >= byte.MaxValue)
+                throw new DnsWebServiceException("Cannot create more than 255 users.");
+
+            username = username.ToLowerInvariant();
+
+            User user = User.CreateLdapUser(displayName, username);
+
+            if (_users.TryAdd(username, user))
+            {
+                if (_users.Count > byte.MaxValue)
+                {
+                    _users.TryRemove(username, out _); //undo
+                    throw new DnsWebServiceException("Cannot create more than 255 users.");
+                }
+
+                user.AddToGroup(GetGroup(Group.EVERYONE));
+                return user;
+            }
+
+            throw new DnsWebServiceException("User already exists: " + username);
+        }
+
         public bool HasDefaultCredentials()
         {
             User user = GetUser("admin");
 
-            return (user is not null) && user.PasswordHash.Equals(user.GetPasswordHashFor("admin"), StringComparison.Ordinal);
+            return (user is not null) && user.HasDefaultCredentials();
         }
 
         public void ChangeUsername(User user, string newUsername)
@@ -1134,8 +1485,14 @@ namespace DnsServerCore.Auth
 
         public UserSession GetSession(string token)
         {
-            if ((token is not null) && _sessions.TryGetValue(token, out UserSession session))
-                return session;
+            if (token is not null)
+            {
+                if (_sessions.TryGetValue(token, out UserSession session))
+                    return session;
+
+                if ((_staticSessions is not null) && _staticSessions.TryGetValue(token, out UserSession staticSession))
+                    return staticSession;
+            }
 
             return null;
         }
@@ -1462,6 +1819,170 @@ namespace DnsServerCore.Auth
 
         public bool SsoManagedGroups
         { get { return _ssoGroupMap is not null; } }
+
+        public bool LdapEnabled
+        {
+            get { return _ldapEnabled; }
+            set { _ldapEnabled = value; }
+        }
+
+        public string LdapServer
+        {
+            get { return _ldapServer; }
+            set
+            {
+                if (value is not null)
+                {
+                    if (value.Length == 0)
+                        value = null;
+                    else if (value.Length > 255)
+                        throw new ArgumentException("The LDAP Server length cannot be more than 255 chars.", nameof(LdapServer));
+                }
+
+                _ldapServer = value;
+            }
+        }
+
+        public int LdapPort
+        {
+            get { return _ldapPort; }
+            set
+            {
+                if ((value < 1) || (value > 65535))
+                    throw new ArgumentOutOfRangeException(nameof(LdapPort), "LDAP port must be between 1 and 65535.");
+
+                _ldapPort = value;
+            }
+        }
+
+        public LdapAuthSslOption LdapSslOption
+        {
+            get { return _ldapSslOption; }
+            set { _ldapSslOption = value; }
+        }
+
+        public bool LdapIgnoreSslErrors
+        {
+            get { return _ldapIgnoreSslErrors; }
+            set { _ldapIgnoreSslErrors = value; }
+        }
+
+        public string LdapBindUsername
+        {
+            get { return _ldapBindUsername; }
+            set
+            {
+                if (value is not null)
+                {
+                    if (value.Length == 0)
+                        value = null;
+                    else if (value.Length > 255)
+                        throw new ArgumentException("The LDAP Bind Username length cannot be more than 255 chars.", nameof(LdapBindUsername));
+                }
+
+                _ldapBindUsername = value;
+            }
+        }
+
+        public string LdapBindPassword
+        {
+            get { return _ldapBindPassword; }
+            set
+            {
+                if (value is not null)
+                {
+                    if (value.Length == 0)
+                        value = null;
+                    else if (value.Length > 255)
+                        throw new ArgumentException("The LDAP Bind Password length cannot be more than 255 chars.", nameof(LdapBindPassword));
+                }
+
+                _ldapBindPassword = value;
+            }
+        }
+
+        public string LdapSearchBase
+        {
+            get { return _ldapSearchBase; }
+            set
+            {
+                if (value is not null)
+                {
+                    if (value.Length == 0)
+                        value = null;
+                    else if (value.Length > 255)
+                        throw new ArgumentException("The LDAP Search Base length cannot be more than 255 chars.", nameof(LdapSearchBase));
+                }
+
+                _ldapSearchBase = value;
+            }
+        }
+
+        public string LdapUserSearchFilter
+        {
+            get { return _ldapUserSearchFilter; }
+            set
+            {
+                if (value is not null)
+                {
+                    if (value.Length == 0)
+                        value = null;
+                    else if (value.Length > 255)
+                        throw new ArgumentException("The LDAP User Filter length cannot be more than 255 chars.", nameof(LdapUserSearchFilter));
+                }
+
+                _ldapUserSearchFilter = value;
+            }
+        }
+
+        public string LdapGroupAttribute
+        {
+            get { return _ldapGroupAttribute; }
+            set
+            {
+                if (value is not null)
+                {
+                    if (value.Length == 0)
+                        value = null;
+                    else if (value.Length > 255)
+                        throw new ArgumentException("The LDAP Group Attribute length cannot be more than 255 chars.", nameof(LdapGroupAttribute));
+                }
+
+                _ldapGroupAttribute = value;
+            }
+        }
+
+        public bool LdapAllowSignup
+        {
+            get { return _ldapAllowSignup; }
+            set { _ldapAllowSignup = value; }
+        }
+
+        public bool LdapAllowSignupOnlyForMappedUsers
+        {
+            get { return _ldapAllowSignupOnlyForMappedUsers; }
+            set { _ldapAllowSignupOnlyForMappedUsers = value; }
+        }
+
+        public IReadOnlyDictionary<string, string> LdapGroupMap
+        {
+            get { return _ldapGroupMap; }
+            set
+            {
+                if (value is not null)
+                {
+                    if (value.Count == 0)
+                        value = null;
+                    else if (value.Count > 255)
+                        throw new ArgumentException("The LDAP Group Map cannot have more than 255 entries.", nameof(LdapGroupMap));
+                }
+
+                _ldapGroupMap = value;
+            }
+        }
+
+        public bool LdapManagedGroups
+        { get { return _ldapGroupMap is not null; } }
 
         #endregion
     }

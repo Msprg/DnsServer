@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using DnsServerCore.ApplicationCommon;
 using System;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -119,10 +120,27 @@ namespace WildIp
                                 rawIp[i++] = x;
                         }
 
-                        if (i != 4)
-                            return null; //failed to parse ipv4
+                        if (i == 4)
+                        {
+                            address = new IPAddress(rawIp);
+                        }
+                        else
+                        {
+                            //failed to parse decimal ipv4; attempt to parse an 8-character hexadecimal ipv4 label
+                            parts = subdomain.Split(aaaaRecordSeparator, StringSplitOptions.RemoveEmptyEntries);
 
-                        address = new IPAddress(rawIp);
+                            foreach (string part in parts)
+                            {
+                                if ((part.Length == 8) && uint.TryParse(part, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint value))
+                                {
+                                    address = IPAddressExtensions.ConvertNumberToIp(value);
+                                    break;
+                                }
+                            }
+
+                            if (address is null)
+                                return null; //failed to parse ipv4
+                        }
                     }
 
                     if (!string.IsNullOrEmpty(appRecordData))
@@ -182,7 +200,7 @@ namespace WildIp
         #region properties
 
         public string Description
-        { get { return "Returns the IP address that was embedded in the subdomain name for A and AAAA queries. It works similar to sslip.io."; } }
+        { get { return "Returns the IP address that was embedded in the subdomain name for A and AAAA queries, including compact hexadecimal IPv4 labels. It works similar to sslip.io."; } }
 
         public string ApplicationRecordDataTemplate
         {

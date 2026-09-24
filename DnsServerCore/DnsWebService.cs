@@ -174,7 +174,7 @@ namespace DnsServerCore
             Directory.CreateDirectory(Path.Combine(_configFolder, "zones"));
 
             _log = new LogManager(isPortableApp, _configFolder);
-            _authManager = new AuthManager(_configFolder, _log);
+            _authManager = new AuthManager(this, _configFolder, _log);
 
             _api = new WebServiceApi(this, updateCheckUri);
             _dashboardApi = new WebServiceDashboardApi(this);
@@ -383,9 +383,10 @@ namespace DnsServerCore
         {
             if (Environment.OSVersion.Platform == PlatformID.Unix)
             {
-                //adding a conditional forwarder zone for disabling DNSSEC validation for ntp.org so that systems with no real-time clock can sync time
+                //adding Negative Trust Anchor (NTA) for ntp.org so that systems with no real-time clock can sync time
                 string ntpDomain = "ntp.org";
-                string fwdRecordComments = "This forwarder zone was automatically created to disable DNSSEC validation for ntp.org to allow systems with no real-time clock (e.g. Raspberry Pi) to sync time via NTP when booting.";
+                string fwdRecordComments = "Negative Trust Anchor for ntp.org to allow systems with no real-time clock to sync time.";
+
                 if (_dnsServer.AuthZoneManager.CreateForwarderZone(ntpDomain, DnsTransportProtocol.Udp, "this-server", false, DnsForwarderRecordProxyType.DefaultProxy, null, 0, null, null, fwdRecordComments) is not null)
                 {
                     //set permissions
@@ -401,18 +402,9 @@ namespace DnsServerCore
             string tmpConfigFile = Path.Combine(_configFolder, "webservice.tmp");
             string configFile = Path.Combine(_configFolder, "webservice.config");
 
-            using (MemoryStream mS = new MemoryStream())
+            using (FileStream fS = new FileStream(tmpConfigFile, FileMode.Create, FileAccess.Write))
             {
-                //serialize config
-                WriteConfigTo(mS);
-
-                //write config
-                mS.Position = 0;
-
-                using (FileStream fS = new FileStream(tmpConfigFile, FileMode.Create, FileAccess.Write))
-                {
-                    mS.CopyTo(fS);
-                }
+                WriteConfigTo(fS);
             }
 
             File.Move(tmpConfigFile, configFile, true);
@@ -1363,13 +1355,13 @@ namespace DnsServerCore
                             foreach (KeyValuePair<string, DnsApplication> application in _dnsServer.DnsApplicationManager.Applications)
                             {
                                 if (!existingApplications.Contains(application.Key))
-                                    _dnsServer.DnsApplicationManager.UninstallApplication(application.Key);
+                                    await _dnsServer.DnsApplicationManager.UninstallApplicationAsync(application.Key);
                             }
                         }
                         else
                         {
                             //unload apps
-                            _dnsServer.DnsApplicationManager.UnloadAllApplications();
+                            await _dnsServer.DnsApplicationManager.UnloadAllApplicationsAsync();
 
                             if (deleteExistingFiles)
                             {
@@ -1829,7 +1821,18 @@ namespace DnsServerCore
                 UsePollingFileWatcher = true
             };
 
-            builder.Environment.WebRootFileProvider = new PhysicalFileProvider(Path.Combine(_appFolder, "www"))
+            string wwwFolderPath = Environment.GetEnvironmentVariable("DNS_SERVER_WEB_SERVICE_WWW_FOLDER_PATH");
+            if (string.IsNullOrEmpty(wwwFolderPath))
+            {
+                wwwFolderPath = Path.Combine(_appFolder, "www");
+            }
+            else if (!Directory.Exists(wwwFolderPath))
+            {
+                _log.Write("Web Service is falling back to the default web root folder since the folder configured by the DNS_SERVER_WEB_SERVICE_WWW_FOLDER_PATH environment variable does not exist: " + wwwFolderPath);
+                wwwFolderPath = Path.Combine(_appFolder, "www");
+            }
+
+            builder.Environment.WebRootFileProvider = new PhysicalFileProvider(wwwFolderPath)
             {
                 UseActivePolling = true,
                 UsePollingFileWatcher = true
@@ -2183,7 +2186,7 @@ namespace DnsServerCore
             _webService.MapGetAndPost("/api/apps/downloadAndUpdate", _appsApi.DownloadAndUpdateAppAsync);
             _webService.MapPost("/api/apps/install", _appsApi.InstallAppAsync);
             _webService.MapPost("/api/apps/update", _appsApi.UpdateAppAsync);
-            _webService.MapGetAndPost("/api/apps/uninstall", _appsApi.UninstallApp);
+            _webService.MapGetAndPost("/api/apps/uninstall", _appsApi.UninstallAppAsync);
             _webService.MapGetAndPost("/api/apps/config/get", _appsApi.GetAppConfigAsync);
             _webService.MapGetAndPost("/api/apps/config/set", _appsApi.SetAppConfigAsync);
 
@@ -2235,6 +2238,9 @@ namespace DnsServerCore
             _webService.MapGetAndPost("/api/admin/sso/set", _authApi.SetSsoConfig);
             _webService.MapGetAndPost("/api/admin/sso/users/create", _authApi.CreateSsoUser);
             _webService.MapGetAndPost("/api/admin/sso/users/set", _authApi.SetSsoUser);
+            _webService.MapGetAndPost("/api/admin/ldap/get", _authApi.GetLdapConfig);
+            _webService.MapGetAndPost("/api/admin/ldap/set", _authApi.SetLdapConfig);
+            _webService.MapGetAndPost("/api/admin/ldap/test", _authApi.TestLdapConnectionAsync);
             _webService.MapGetAndPost("/api/admin/cluster/state", _clusterApi.GetClusterState);
             _webService.MapGetAndPost("/api/admin/cluster/init", _clusterApi.InitializeCluster);
             _webService.MapGetAndPost("/api/admin/cluster/primary/delete", _clusterApi.DeleteCluster);
@@ -2306,6 +2312,7 @@ namespace DnsServerCore
                 case "/api/admin/sso/set":
                 case "/api/admin/sso/users/create":
                 case "/api/admin/sso/users/set":
+                case "/api/admin/ldap/set":
                     return ClusterNodeType.Primary; //this api can be called only on primary node
 
                 case "/sso/login":
@@ -2423,6 +2430,22 @@ namespace DnsServerCore
                         await next(context);
                     }
                     return;
+
+                case "/api/dnsClient/healthCheck":
+                    {
+                        if (!TryValidateSession(context, out UserSession _))
+                        {
+                            IPAddress remoteAddress = GetRemoteEndPoint(context).Address;
+
+                            if (!remoteAddress.Equals(IPAddress.Loopback) && !remoteAddress.Equals(IPAddress.IPv6Loopback))
+                                throw new InvalidTokenWebServiceException("Invalid token or session expired.");
+
+                            //allow unauthenticated call from localhost
+                        }
+
+                        needsJsonResponseObject = false;
+                    }
+                    break;
 
                 default:
                     if (request.Path.Value.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))

@@ -7,7 +7,7 @@ ADD --link https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft
 RUN <<HEREDOC
   dpkg -i packages-microsoft-prod.deb && rm packages-microsoft-prod.deb
   # `dnsutils` added to include the `dig` command for troubleshooting:
-  apt-get update && apt-get install -y libmsquic dnsutils iputils-ping
+  apt-get update && apt-get install -y libmsquic dnsutils iputils-ping curl
   apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
   # `/etc/dns` is expected to exist the default directory for persisting state:
@@ -41,6 +41,7 @@ EXPOSE \
 # https://specs.opencontainers.org/image-spec/annotations/
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.title="Technitium DNS Server"
+LABEL org.opencontainers.image.version=15.5.0
 LABEL org.opencontainers.image.vendor="Technitium"
 LABEL org.opencontainers.image.source="https://github.com/TechnitiumSoftware/DnsServer"
 LABEL org.opencontainers.image.url="https://technitium.com/dns/"

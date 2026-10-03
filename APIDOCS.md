@@ -416,7 +416,7 @@ WHERE:
 - `pass`: The current password for the currently logged in user.
 - `newPass`: The new password to be set for the currently logged in user.
 - `totp` (optional): The 6-digit code from the authenticator app if the user has 2FA enabled.
-- `iterations` (optional): The number of iterations for PBKDF2 SHA256 password hashing.
+- `iterations` (optional): The number of iterations for PBKDF2 SHA256 password hashing. Valid range is from 100000 to 1000000. Default value when not specified is 100000.
 
 RESPONSE:
 ```
@@ -5314,6 +5314,7 @@ RESPONSE:
 		"cacheMaximumRecordTtl": 604800,
 		"cacheNegativeRecordTtl": 300,
 		"cacheFailureRecordTtl": 10,
+		"enableCachePrefetch": true,
 		"cachePrefetchEligibility": 2,
 		"cachePrefetchTrigger": 9,
 		"enableBlocking": true,
@@ -5472,8 +5473,9 @@ WHERE:
 - `cacheMaximumRecordTtl` (optional): The maximum TTL value that a record can have in cache. Set a lower value to allow the records to expire early. Initial value is `86400`.
 - `cacheNegativeRecordTtl` (optional): The negative TTL value to use when there is no SOA MINIMUM value available. Initial value is `300`.
 - `cacheFailureRecordTtl` (optional): The failure TTL value to used for caching failure responses. This allows storing failure record in cache and prevent frequent recursive resolution to name servers that are responding with `ServerFailure`. Initial value is `60`.
+- `enableCachePrefetch` (optional): Set this option to `true` to refresh records that are about to expire in cache. A prefetch background task for a cached record is triggered when it is queried for and the DNS server finds the record's TTL value to be less than the Prefetch Trigger value.
 - `cachePrefetchEligibility` (optional): The minimum initial TTL value of a record needed to be eligible for prefetching.
-- `cachePrefetchTrigger` (optional): A record with TTL value less than trigger value will initiate prefetch operation immediately for itself. Set `0` to disable prefetching & auto prefetching.
+- `cachePrefetchTrigger` (optional): A record with TTL value less than trigger value will initiate prefetch operation immediately for itself when queried.
 - `enableBlocking` (optional, cluster parameter): Sets the DNS server to block domain names using Blocked Zone and Block List Zone.
 - `allowTxtBlockingReport` (optional, cluster parameter): Specifies if the DNS Server should respond with TXT records containing a blocked domain report for TXT type requests.
 - `blockingBypassList` (optional, cluster parameter): A comma separated list of IP addresses or network addresses that are allowed to bypass blocking.
@@ -7277,14 +7279,14 @@ RESPONSE:
 	"response": {
 		"clusterInitialized": true,
 		"dnsServerDomain": "server1.example.com",
-		"version": "14.0",
+		"version": "15.6",
 		"clusterDomain": "example.com",
 		"heartbeatRefreshIntervalSeconds": 30,
 		"heartbeatRetryIntervalSeconds": 10,
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-26T12:30:16Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1342079372,
 				"name": "server1.example.com",
@@ -7292,6 +7294,7 @@ RESPONSE:
 				"ipAddress": "192.168.10.5",
 				"type": "Secondary",
 				"state": "Self",
+				"version": "15.6,
 				"lastSeen": "0001-01-01T00:00:00"
 			},
 			{
@@ -7310,6 +7313,7 @@ RESPONSE:
 				"ipAddress": "192.168.10.102",
 				"type": "Primary",
 				"state": "Connected",
+				"version": "15.6,
 				"lastSeen": "2025-09-26T12:30:16Z"
 			}
 		],
@@ -7359,7 +7363,7 @@ RESPONSE:
 		"heartbeatRetryIntervalSeconds": 10,
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1081800048,
 				"name": "server1.example.com",
@@ -7442,7 +7446,7 @@ RESPONSE:
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-26T12:30:16Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1342079372,
 				"name": "server1.example.com",
@@ -7500,7 +7504,7 @@ RESPONSE:
 		"heartbeatRetryIntervalSeconds": 10,
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1151850285,
 				"name": "server1.example.com",
@@ -7547,7 +7551,7 @@ RESPONSE:
 		"heartbeatRetryIntervalSeconds": 10,
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1151850285,
 				"name": "server1.example.com",
@@ -7598,7 +7602,7 @@ RESPONSE:
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-26T12:30:16Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1342079372,
 				"name": "server1.example.com",
@@ -7683,7 +7687,7 @@ RESPONSE:
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-26T12:30:16Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1342079372,
 				"name": "server1.example.com",
@@ -7757,7 +7761,7 @@ RESPONSE:
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-27T13:19:55Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1151850285,
 				"name": "server1.example.com",
@@ -7900,7 +7904,7 @@ RESPONSE:
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-27T13:19:55Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 1151850285,
 				"name": "server1.example.com",
@@ -7964,7 +7968,7 @@ RESPONSE:
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-27T13:19:55Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 811905692,
 				"name": "server2.example.com",
@@ -8013,7 +8017,7 @@ RESPONSE:
 		"configRefreshIntervalSeconds": 900,
 		"configRetryIntervalSeconds": 60,
 		"configLastSynced": "2025-09-27T13:19:55Z",
-		"nodes": [
+		"clusterNodes": [
 			{
 				"id": 811905692,
 				"name": "server2.example.com",

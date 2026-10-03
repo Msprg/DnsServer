@@ -3010,6 +3010,9 @@ namespace DnsServerCore
         public string ConfigFolder
         { get { return _configFolder; } }
 
+        public string Version
+        { get { return GetCleanVersion(_currentVersion); } }
+
         public int WebServiceHttpPort
         { get { return _webServiceHttpPort; } }
 

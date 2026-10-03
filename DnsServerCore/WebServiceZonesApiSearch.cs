@@ -60,6 +60,10 @@ namespace DnsServerCore
                 if (query.Length == 0)
                     throw new DnsWebServiceException("Parameter 'q' must not be empty.");
 
+                //same bound upstream puts on the zone list filter: both become a regex
+                if (query.Length > 255)
+                    throw new DnsWebServiceException("Parameter 'q' length cannot exceed 255 characters.");
+
                 //name: match the record owner name and its zone; value: match the record data; all: both
                 string scope = request.GetQueryOrForm("scope", "all").Trim().ToLowerInvariant();
 
@@ -79,6 +83,8 @@ namespace DnsServerCore
 
                 DnsResourceRecordType filterType = request.GetQueryOrFormEnum("type", DnsResourceRecordType.Unknown);
                 string filterZone = request.GetQueryOrForm("zone", null);
+                if ((filterZone is not null) && (filterZone.Length > 255))
+                    throw new DnsWebServiceException("Parameter 'zone' length cannot exceed 255 characters.");
                 bool filterZoneExact = request.GetQueryOrForm("zoneExact", bool.Parse, false);
 
                 int maxResults = request.GetQueryOrForm("maxResults", int.Parse, 100);

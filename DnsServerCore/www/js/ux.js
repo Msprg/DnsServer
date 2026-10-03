@@ -126,7 +126,7 @@ var UX = (function () {
         if (updateLink.length > 0) {
             updateLink.css("margin-right", "10px").after(
                 '<div id="divGlobalSearch" class="global-search">' +
-                '<input type="text" id="txtGlobalSearch" class="form-control" placeholder="Search zones &amp; records..." autocomplete="off" spellcheck="false" aria-label="Search zones and records" />' +
+                '<input type="text" id="txtGlobalSearch" class="form-control" placeholder="Search zones &amp; records..." maxlength="255" autocomplete="off" spellcheck="false" aria-label="Search zones and records" />' +
                 '<span id="lnkGlobalSearchClear" class="global-search-clear" title="Clear search">&times;</span>' +
                 '<div id="divGlobalSearchResults" class="global-search-results"></div>' +
                 '</div>');

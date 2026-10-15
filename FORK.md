@@ -46,7 +46,7 @@ DnsServerCore/www/js/ux.js
 
 ## Every change to an upstream file
 
-Eleven hunks across nine files. This is the entire conflict surface, and it is
+Thirteen hunks across ten files. This is the entire conflict surface, and it is
 worth re-deriving rather than trusting after a merge:
 
 ```bash
@@ -69,6 +69,7 @@ git diff --stat upstream/master...HEAD -- . \
 | `DnsServerCore/DnsServerCore.csproj` | Two `ItemGroup`s at the end of the file declaring the four fork assets. |
 | `docker-compose.yml` | `image:` repointed at this fork's GHCR image. |
 | `.gitignore` | `/node_modules/` and `/package-lock.json`, for the regression tests' jsdom install. |
+| `DnsServerCore/Auth/AuthManager.cs` | **Temporary.** Two hunks in `CreateSessionAsync()` / `CreateSession()` for upstream #2224. See [below](#upstream-bugs-patched-in-upstream-files). |
 
 ## Syncing with upstream
 
@@ -79,8 +80,8 @@ git merge upstream/master        # or: git rebase upstream/master
 
 Conflicts should be rare and confined to the table above. After merging:
 
-1. Run the grep above and confirm all nine `FORK` markers are still present and
-   still make sense. (Nine markers, eleven hunks: `.gitignore` and `APIDOCS.md`
+1. Run the grep above and confirm all eleven `FORK` markers are still present and
+   still make sense. (Eleven markers, thirteen hunks: `.gitignore` and `APIDOCS.md`
    carry additions rather than marked edits.)
 2. Check the anchors the fork depends on still exist. `js/ux.js` injects its
    markup next to these element ids, and `css/ux.css` targets tables by id:
@@ -164,6 +165,29 @@ Both are corrected from fork-only files, so neither adds anything to merge.
 |---|---|
 | `main.css` puts `.AlertPlaceholder` at `z-index: 1000`, under Bootstrap's modal backdrop at 1040. Any alert raised while a modal is open is drawn behind it and never seen &mdash; including the error explaining why the thing you just did failed. | `.AlertPlaceholder { z-index: 1060 }` in `css/ux.css` |
 | Restore Settings deletes config files off disk, behind a blue `btn-primary` that reads as the safe default. | `js/ux.js` restyles it `btn-danger`. The pre-ticked "Delete Existing Files" is left alone: it decides what a restore *means*, and that is upstream's call. |
+
+### Upstream bugs patched in upstream files
+
+Temporary patches for bugs serious enough to carry until upstream ships its own
+fix. Each one adds to the conflict surface, so each one says how to drop it.
+
+**[#2224](https://github.com/TechnitiumSoftware/DnsServer/issues/2224): the
+primary stops writing `auth.config` after the first login.** v15.6.1 (upstream
+commit `1ed1f0ae`) made `CreateSessionAsync()` and `CreateSession()` in
+`DnsServerCore/Auth/AuthManager.cs` set `_pendingSave = true` without arming
+`_saveTimer`. `SaveConfigFile()` returns early whenever that flag is already
+set, so from the first login after a restart onward, no user, group,
+permission or API token change reached disk until a clean shutdown. A crash
+lost all of it, secondaries kept syncing the stale file, and the cluster-wide
+dashboard logged `No such user exists: <user>` for every user created since.
+The fork replaces both bare flag assignments with `SaveConfigFile()`, which sets
+the same flag and also arms the timer, so the save stays lazy (5 seconds) but
+actually happens.
+
+To drop it once upstream fixes #2224: the merge will most likely conflict on
+those two hunks. Take upstream's side, remove the `AuthManager.cs` row from the
+table above and its entry from `EXPECTED_MARKERS` in `tools/check-fork.py`,
+and put the counts back to eleven hunks, nine files, nine markers.
 
 ### Upstream bugs deliberately left alone
 

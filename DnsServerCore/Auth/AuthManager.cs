@@ -1532,10 +1532,7 @@ namespace DnsServerCore.Auth
             user.LoggedInFrom(remoteAddress);
 
             //lazy save user login timestamps details
-            lock (_saveLock)
-            {
-                _pendingSave = true;
-            }
+            SaveConfigFile(); //FORK: upstream #2224 - setting _pendingSave alone never armed the save timer, so every later save was skipped until shutdown
 
             return session;
         }
@@ -1562,10 +1559,7 @@ namespace DnsServerCore.Auth
             user.LoggedInFrom(remoteAddress);
 
             //lazy save user login timestamps details
-            lock (_saveLock)
-            {
-                _pendingSave = true;
-            }
+            SaveConfigFile(); //FORK: upstream #2224 - setting _pendingSave alone never armed the save timer, so every later save was skipped until shutdown
 
             return session;
         }

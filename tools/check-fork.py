@@ -47,6 +47,7 @@ EXPECTED_MARKERS = {
     "DnsServerCore/www/js/main.js": 2,
     "DnsServerCore/WebServiceZonesApi.cs": 1,
     "DnsServerCore/DnsWebService.cs": 1,
+    "DnsServerCore/Auth/AuthManager.cs": 2,
     "DnsServerCore/DnsServerCore.csproj": 1,
     "docker-compose.yml": 1,
 }

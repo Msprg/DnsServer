@@ -46,7 +46,7 @@ DnsServerCore/www/js/ux.js
 
 ## Every change to an upstream file
 
-Eleven hunks across nine files. This is the entire conflict surface, and it is
+Seventeen hunks across ten files. This is the entire conflict surface, and it is
 worth re-deriving rather than trusting after a merge:
 
 ```bash
@@ -68,6 +68,7 @@ git diff --stat upstream/master...HEAD -- . \
 | `APIDOCS.md` | A new "Search Records" section. Pure insertion. |
 | `DnsServerCore/DnsServerCore.csproj` | Two `ItemGroup`s at the end of the file declaring the four fork assets. |
 | `docker-compose.yml` | `image:` repointed at this fork's GHCR image. |
+| `DnsServerCore/Dns/ZoneManagers/AuthZoneManager.cs` | Six hunks for the root zone A/AAAA sync fix (see below): two helpers, `GetRootZoneDelegations()` and `IsRootZoneGlue()`, added above `CondenseIncrementalZoneTransferRecords()`, and their calls in the `//root zone case` branches of `SyncZoneTransferRecords()` and `SyncIncrementalZoneTransferRecords()`. |
 | `.gitignore` | `/node_modules/` and `/package-lock.json`, for the regression tests' jsdom install. |
 
 ## Syncing with upstream
@@ -79,9 +80,10 @@ git merge upstream/master        # or: git rebase upstream/master
 
 Conflicts should be rare and confined to the table above. After merging:
 
-1. Run the grep above and confirm all nine `FORK` markers are still present and
-   still make sense. (Nine markers, eleven hunks: `.gitignore` and `APIDOCS.md`
-   carry additions rather than marked edits.)
+1. Run the grep above and confirm all twelve `FORK` markers are still present and
+   still make sense. (Twelve markers, seventeen hunks: `.gitignore` and `APIDOCS.md`
+   carry additions rather than marked edits, and three of the `AuthZoneManager.cs`
+   hunks are calls to `IsRootZoneGlue()`, found by searching for that name.)
 2. Check the anchors the fork depends on still exist. `js/ux.js` injects its
    markup next to these element ids, and `css/ux.css` targets tables by id:
 
@@ -158,7 +160,47 @@ python3 tools/check-fork.py
 
 ## Upstream bugs this fork works around
 
-Both are corrected from fork-only files, so neither adds anything to merge.
+### Root zone A/AAAA records never reach secondaries
+
+Upstream's zone transfer code has a `//root zone case` branch that files every
+A and AAAA record in a zone named `.` as glue. Glue is kept only where an NS
+record points at it, so every other address record in a root zone is dropped
+on the secondary, by AXFR, IXFR and Resync alike. That shortcut is right for a
+copy of the IANA root zone, whose A/AAAA records all sit below a TLD
+delegation. It is wrong for a custom root zone, such as a `.` Forwarder zone in
+a cluster catalog that carries local overrides: the primary answers them and
+the secondaries forward the query and get NXDOMAIN.
+
+The fork's fix treats an A/AAAA in a root zone as glue only when it is at or
+below a delegation (a non-apex NS record in the transfer, or for IXFR one that
+already exists in the zone); otherwise it is an ordinary record. Other record
+types and non-root zones are untouched.
+
+After upgrading, run a Resync of the root zone on each secondary that already
+holds it. Records dropped before the upgrade stay missing until then: later
+changes arrive by IXFR, which carries only the change itself.
+
+`tools/test-root-zone-sync.py <image>` checks it on a two-node Docker setup
+(custom root Primary, `.` Forwarder through a Catalog, and a normal zone, over
+AXFR, IXFR and Resync). Upstream's build fails 7 of its 26 checks, the fixed
+build passes all of them. When the fix went in, two more checks were run by
+hand. The real IANA root zone was transferred into both builds with ZONEMD
+validation on, and the resulting 27,939-record AXFR was byte-identical with
+matching referrals. A secondary synced by upstream's build was also recreated
+from the fixed image on the same config volume: it loaded fine, picked up new
+records by IXFR, recovered the old ones on Resync, and kept them across a
+restart.
+
+Known limit: an A/AAAA added in the same IXFR that removes the delegation above
+it is still filed as glue. A Resync of the zone corrects it.
+
+If upstream fixes this, the merge conflicts on those hunks. Take upstream's
+side, drop the two helpers, this section and the `EXPECTED_MARKERS` entry, and
+rerun the test script against the merged image.
+
+### Web console
+
+These two are corrected from fork-only files, so neither adds anything to merge.
 
 | Bug | Worked around by |
 |---|---|

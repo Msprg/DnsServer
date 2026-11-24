@@ -2681,6 +2681,8 @@ namespace DnsServerCore.Dns.ZoneManagers
             if (zoneName.Length == 0)
             {
                 //root zone case
+                HashSet<string> rootDelegations = GetRootZoneDelegations(xfrRecords); //FORK: root zone A/AAAA sync, see IsRootZoneGlue()
+
                 for (int i = 1; i < xfrRecords.Count; i++)
                 {
                     DnsResourceRecord record = xfrRecords[i];
@@ -2689,8 +2691,15 @@ namespace DnsServerCore.Dns.ZoneManagers
                     {
                         case DnsResourceRecordType.A:
                         case DnsResourceRecordType.AAAA:
-                            if (!allGlueRecords.Contains(record))
+                            if (!IsRootZoneGlue(record.Name, rootDelegations, false))
+                            {
+                                if (!latestRecords.Contains(record))
+                                    latestRecords.Add(record);
+                            }
+                            else if (!allGlueRecords.Contains(record))
+                            {
                                 allGlueRecords.Add(record);
+                            }
 
                             break;
 
@@ -2786,6 +2795,7 @@ namespace DnsServerCore.Dns.ZoneManagers
             DnsSOARecordData currentSoa = currentSoaRecord.RDATA as DnsSOARecordData;
 
             List<DnsResourceRecord> condensedXfrRecords = CondenseIncrementalZoneTransferRecords(zoneName, currentSoaRecord, xfrRecords);
+            HashSet<string> rootDelegations = zoneName.Length == 0 ? GetRootZoneDelegations(condensedXfrRecords) : null; //FORK: root zone A/AAAA sync, see IsRootZoneGlue()
 
             List<DnsResourceRecord> deletedRecords = new List<DnsResourceRecord>();
             List<DnsResourceRecord> deletedGlueRecords = new List<DnsResourceRecord>();
@@ -2818,7 +2828,11 @@ namespace DnsServerCore.Dns.ZoneManagers
                         {
                             case DnsResourceRecordType.A:
                             case DnsResourceRecordType.AAAA:
-                                deletedGlueRecords.Add(record);
+                                if (IsRootZoneGlue(record.Name, rootDelegations, true))
+                                    deletedGlueRecords.Add(record);
+                                else
+                                    deletedRecords.Add(record);
+
                                 break;
 
                             default:
@@ -2867,7 +2881,11 @@ namespace DnsServerCore.Dns.ZoneManagers
                         {
                             case DnsResourceRecordType.A:
                             case DnsResourceRecordType.AAAA:
-                                addedGlueRecords.Add(record);
+                                if (IsRootZoneGlue(record.Name, rootDelegations, true))
+                                    addedGlueRecords.Add(record);
+                                else
+                                    addedRecords.Add(record);
+
                                 break;
 
                             default:
@@ -2970,6 +2988,43 @@ namespace DnsServerCore.Dns.ZoneManagers
                 historyRecords.Add(xfrRecords[i]);
 
             return historyRecords;
+        }
+
+        //FORK: a root zone has no out-of-zone names, so an A/AAAA record in it is glue only when it is at or
+        //below a delegation. Upstream treats every A/AAAA in a root zone as glue, which drops a custom root
+        //zone's own address records (such as overrides in a "." Forwarder zone) on secondaries. In the IANA
+        //root zone every A/AAAA is below a TLD delegation, so it syncs exactly as before.
+        private static HashSet<string> GetRootZoneDelegations(IReadOnlyList<DnsResourceRecord> xfrRecords)
+        {
+            HashSet<string> delegations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (DnsResourceRecord record in xfrRecords)
+            {
+                if ((record.Type == DnsResourceRecordType.NS) && (record.Name.Length > 0))
+                    delegations.Add(record.Name);
+            }
+
+            return delegations;
+        }
+
+        private bool IsRootZoneGlue(string name, HashSet<string> xfrDelegations, bool checkZoneTree)
+        {
+            string domain = name;
+
+            while (domain.Length > 0)
+            {
+                if (xfrDelegations.Contains(domain))
+                    return true;
+
+                //for IXFR, the delegation may already exist in the zone rather than in the difference sequence
+                if (checkZoneTree && _root.TryGet("", domain, out AuthZone zone) && (zone is SubDomainZone subDomainZone) && (subDomainZone.AuthoritativeZone.Name.Length == 0) && zone.ContainsNameServerRecords())
+                    return true;
+
+                int i = domain.IndexOf('.');
+                domain = i < 0 ? "" : domain.Substring(i + 1);
+            }
+
+            return false;
         }
 
         private static List<DnsResourceRecord> CondenseIncrementalZoneTransferRecords(string zoneName, DnsResourceRecord currentSoaRecord, IReadOnlyList<DnsResourceRecord> xfrRecords)

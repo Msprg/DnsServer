@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Two-node zone transfer regression test for the fork's root zone A/AAAA sync fix
-(see "Root zone A/AAAA records never reach secondaries" in FORK.md).
+"""Two-node zone transfer regression test for the fork's zone transfer fixes
+(see "Root zone A/AAAA records never reach secondaries" and "A zone transfer
+fails when the secondary hosts a zone below it" in FORK.md).
 
 Usage: python3 tools/test-root-zone-sync.py <docker image> [--keep]
 
@@ -8,7 +9,8 @@ Starts a primary and a secondary container from the image on a private docker
 network, builds zones on the primary through the HTTP API, and checks with
 `dig` what the secondary serves after AXFR, IXFR and Resync. Covers a custom
 root Primary zone, a "." Forwarder zone delivered through a Catalog zone (the
-production shape), and a normal zone as a control. Prints one PASS/FAIL line
+production shape), a normal zone as a control, and a secondary that hosts its
+own zone below the zone it transfers (the fork's skip of such names). Prints one PASS/FAIL line
 per check and exits 1 if any fail. Needs docker and dig on the host, and a host
 that can reach container IPs on the bridge network. --keep leaves the
 containers running for inspection.
@@ -195,6 +197,56 @@ def main():
     p.api("/api/zones/records/add", zone=".", domain="ostapi2.test", type="TXT", text="fwd2")
     wait_for(lambda: answer(s, "ostapi2.test", "TXT") != "", 40)
     check("forwarder IXFR: A add synced", answer(s, "ostapi2.test", "A") == "100.66.20.8", answer(s, "ostapi2.test", "A"))
+
+    # ---------- 5. secondary hosts its own zone below "." (a local reverse zone, as on a cluster node)
+    s.api("/api/zones/create", zone="70.23.172.in-addr.arpa", type="Primary")
+    s.api("/api/zones/records/add", zone="70.23.172.in-addr.arpa", domain="5.70.23.172.in-addr.arpa", type="PTR", ptrName="local.test")
+    p.api("/api/zones/records/add", zone=".", domain="5.70.23.172.in-addr.arpa", type="PTR", ptrName="primary.test")
+    p.api("/api/zones/records/add", zone=".", domain="child1.test", type="TXT", text="child1")
+    wait_for(lambda: answer(s, "child1.test", "TXT") != "", 40)
+    check("local child zone: IXFR with a name under it syncs the rest", answer(s, "child1.test", "TXT") == '"child1"', answer(s, "child1.test", "TXT"))
+    check("local child zone: its own record still answers", answer(s, "5.70.23.172.in-addr.arpa", "PTR") == "local.test.", answer(s, "5.70.23.172.in-addr.arpa", "PTR"))
+    s.api("/api/zones/resync", zone=".")
+    time.sleep(6)
+    check("local child zone: Resync keeps '.' records", answer(s, "ostapi.test", "A") == "100.66.20.7" and answer(s, "child1.test", "TXT") == '"child1"',
+          answer(s, "ostapi.test", "A") + " " + answer(s, "child1.test", "TXT"))
+    check("local child zone: local record still answers after Resync", answer(s, "5.70.23.172.in-addr.arpa", "PTR") == "local.test.")
+    log = sh("docker", "exec", S, "sh", "-c", "cat /var/log/technitium/dns/*.log", check=False)
+    check("local child zone: no failed '.' refresh in the log", "failed to refresh '<root>'" not in log)
+    check("local child zone: skipped name is logged", "skipped the name '5.70.23.172.in-addr.arpa'" in log)
+    p.api("/api/zones/records/delete", zone=".", domain="5.70.23.172.in-addr.arpa", type="PTR", ptrName="primary.test")
+    p.api("/api/zones/records/add", zone=".", domain="child2.test", type="TXT", text="child2")
+    wait_for(lambda: answer(s, "child2.test", "TXT") != "", 40)
+    check("local child zone: IXFR deleting a name under it syncs the rest", answer(s, "child2.test", "TXT") == '"child2"', answer(s, "child2.test", "TXT"))
+    check("local child zone: local record survives the delete", answer(s, "5.70.23.172.in-addr.arpa", "PTR") == "local.test.")
+    time.sleep(6)  # let the zone files save
+    sh("docker", "restart", S)
+    s = Node(S)
+    wait_for(lambda: answer(s, "ostapi.test", "A") != "", 30)
+    check("local child zone: zones load after restart", answer(s, "ostapi.test", "A") == "100.66.20.7" and answer(s, "child2.test", "TXT") == '"child2"'
+          and answer(s, "5.70.23.172.in-addr.arpa", "PTR") == "local.test.", answer(s, "ostapi.test", "A") + " " + answer(s, "5.70.23.172.in-addr.arpa", "PTR"))
+    log = sh("docker", "exec", S, "sh", "-c", "cat /var/log/technitium/dns/*.log", check=False)
+    check("local child zone: no failed '.' refresh in the log after restart", "failed to refresh '<root>'" not in log and "does not belong" not in log)
+
+    # ---------- 6. normal zone with a delegation to a zone the secondary hosts itself
+    s.api("/api/zones/create", zone="child.example.net", type="Primary")
+    s.api("/api/zones/records/add", zone="child.example.net", domain="www.child.example.net", type="A", ipAddress="192.0.2.80")
+    p.api("/api/zones/create", zone="example.net", type="Primary")
+    p.api("/api/zones/options/set", zone="example.net", zoneTransfer="Allow", notify="SpecifiedNameServers", notifyNameServers=s.ip)
+    add("example.net", domain="www.example.net", type="A", ipAddress="192.0.2.70")
+    add("example.net", domain="child.example.net", type="NS", nameServer="ns1.child.example.net", glue="192.0.2.81")
+    add("example.net", domain="deep.child.example.net", type="A", ipAddress="192.0.2.82")
+    s.api("/api/zones/create", zone="example.net", type="Secondary", primaryNameServerAddresses=p.ip)
+    wait_for(lambda: answer(s, "www.example.net", "A") != "")
+    check("local child zone, normal AXFR: parent records synced", answer(s, "www.example.net", "A") == "192.0.2.70", answer(s, "www.example.net", "A"))
+    rr = s.api("/api/zones/records/get", zone="example.net", domain="child.example.net")["records"]
+    check("local child zone, normal AXFR: parent-side delegation kept", any(r["type"] == "NS" for r in rr), str(rr)[:300])
+    check("local child zone, normal AXFR: local zone answers its names", answer(s, "www.child.example.net", "A") == "192.0.2.80"
+          and answer(s, "deep.child.example.net", "A") == "", answer(s, "deep.child.example.net", "A"))
+    add("example.net", domain="deep2.child.example.net", type="A", ipAddress="192.0.2.83")
+    add("example.net", domain="www2.example.net", type="A", ipAddress="192.0.2.71")
+    wait_for(lambda: answer(s, "www2.example.net", "A") != "")
+    check("local child zone, normal IXFR: parent records synced", answer(s, "www2.example.net", "A") == "192.0.2.71", answer(s, "www2.example.net", "A"))
 
     print("SUMMARY %s: %d/%d passed" % (IMAGE, sum(results), len(results)))
 

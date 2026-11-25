@@ -2755,7 +2755,9 @@ namespace DnsServerCore.Dns.ZoneManagers
             //sync new records
             foreach (KeyValuePair<string, Dictionary<DnsResourceRecordType, List<DnsResourceRecord>>> latestEntries in latestRecordsGroupedByDomain)
             {
-                AuthZone zone = GetOrAddSubDomainZone(zoneName, latestEntries.Key);
+                AuthZone zone = GetOrAddSubDomainZoneForZoneTransfer(zoneName, latestEntries.Key); //FORK: skip names under other local zones, see GetOrAddSubDomainZoneForZoneTransfer()
+                if (zone is null)
+                    continue;
 
                 if (zone.Name.Equals(zoneName, StringComparison.OrdinalIgnoreCase))
                     zone.SyncRecords(latestEntries.Value);
@@ -2925,7 +2927,9 @@ namespace DnsServerCore.Dns.ZoneManagers
                 {
                     foreach (KeyValuePair<string, Dictionary<DnsResourceRecordType, List<DnsResourceRecord>>> deletedEntry in DnsResourceRecord.GroupRecords(deletedRecords))
                     {
-                        AuthZone zone = GetOrAddSubDomainZone(zoneName, deletedEntry.Key);
+                        AuthZone zone = GetOrAddSubDomainZoneForZoneTransfer(zoneName, deletedEntry.Key); //FORK: skip names under other local zones, see GetOrAddSubDomainZoneForZoneTransfer()
+                        if (zone is null)
+                            continue;
 
                         if (zone.Name.Equals(zoneName, StringComparison.OrdinalIgnoreCase))
                         {
@@ -2945,7 +2949,9 @@ namespace DnsServerCore.Dns.ZoneManagers
                 {
                     foreach (KeyValuePair<string, Dictionary<DnsResourceRecordType, List<DnsResourceRecord>>> addedEntry in DnsResourceRecord.GroupRecords(addedRecords))
                     {
-                        AuthZone zone = GetOrAddSubDomainZone(zoneName, addedEntry.Key);
+                        AuthZone zone = GetOrAddSubDomainZoneForZoneTransfer(zoneName, addedEntry.Key); //FORK: skip names under other local zones, see GetOrAddSubDomainZoneForZoneTransfer()
+                        if (zone is null)
+                            continue;
 
                         if (zone.Name.Equals(zoneName, StringComparison.OrdinalIgnoreCase))
                             zone.SyncRecords(null, addedEntry.Value);
@@ -2988,6 +2994,30 @@ namespace DnsServerCore.Dns.ZoneManagers
                 historyRecords.Add(xfrRecords[i]);
 
             return historyRecords;
+        }
+
+        //FORK: a secondary can host its own zone below the zone it transfers, such as a local reverse zone
+        //under a "." Forwarder zone in a cluster catalog. For a name inside that local zone, upstream's
+        //GetOrAddSubDomainZone() throws, which aborts the whole AXFR or IXFR and leaves the secondary
+        //retrying it forever. The local zone answers for those names anyway, so the transfer now skips
+        //them and logs each one. Every other failure still throws, and names the upstream code accepts,
+        //such as the parent side of a delegation to the local zone, are stored exactly as before.
+        private AuthZone GetOrAddSubDomainZoneForZoneTransfer(string zoneName, string domain)
+        {
+            try
+            {
+                return GetOrAddSubDomainZone(zoneName, domain);
+            }
+            catch (DnsServerException)
+            {
+                _ = _root.FindZone(domain, out _, out _, out ApexZone localZone, out _);
+
+                if ((localZone is null) || localZone.Name.Equals(zoneName, StringComparison.OrdinalIgnoreCase) || !DomainBelongsToZone(zoneName, localZone.Name))
+                    throw;
+
+                _dnsServer.LogManager.Write("DNS Server skipped the name '" + domain + "' in a zone transfer for zone '" + (zoneName.Length == 0 ? "<root>" : zoneName) + "': it belongs to the local zone '" + localZone.ToString() + "', which answers for it.");
+                return null;
+            }
         }
 
         //FORK: a root zone has no out-of-zone names, so an A/AAAA record in it is glue only when it is at or

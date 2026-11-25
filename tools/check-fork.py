@@ -49,7 +49,7 @@ EXPECTED_MARKERS = {
     "DnsServerCore/DnsWebService.cs": 1,
     "DnsServerCore/DnsServerCore.csproj": 1,
     "docker-compose.yml": 1,
-    "DnsServerCore/Dns/ZoneManagers/AuthZoneManager.cs": 3,
+    "DnsServerCore/Dns/ZoneManagers/AuthZoneManager.cs": 7,
 }
 
 print("\nFORK markers in upstream files")

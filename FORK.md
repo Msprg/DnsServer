@@ -46,7 +46,7 @@ DnsServerCore/www/js/ux.js
 
 ## Every change to an upstream file
 
-Seventeen hunks across ten files. This is the entire conflict surface, and it is
+Twenty hunks across ten files. This is the entire conflict surface, and it is
 worth re-deriving rather than trusting after a merge:
 
 ```bash
@@ -68,7 +68,7 @@ git diff --stat upstream/master...HEAD -- . \
 | `APIDOCS.md` | A new "Search Records" section. Pure insertion. |
 | `DnsServerCore/DnsServerCore.csproj` | Two `ItemGroup`s at the end of the file declaring the four fork assets. |
 | `docker-compose.yml` | `image:` repointed at this fork's GHCR image. |
-| `DnsServerCore/Dns/ZoneManagers/AuthZoneManager.cs` | Six hunks for the root zone A/AAAA sync fix (see below): two helpers, `GetRootZoneDelegations()` and `IsRootZoneGlue()`, added above `CondenseIncrementalZoneTransferRecords()`, and their calls in the `//root zone case` branches of `SyncZoneTransferRecords()` and `SyncIncrementalZoneTransferRecords()`. |
+| `DnsServerCore/Dns/ZoneManagers/AuthZoneManager.cs` | Nine hunks for two zone transfer fixes (see below). Root zone A/AAAA sync: two helpers, `GetRootZoneDelegations()` and `IsRootZoneGlue()`, and their calls in the `//root zone case` branches of `SyncZoneTransferRecords()` and `SyncIncrementalZoneTransferRecords()`. Local child zones: one helper, `GetOrAddSubDomainZoneForZoneTransfer()`, replacing `GetOrAddSubDomainZone()` at its three calls in those two methods. All three helpers sit above `CondenseIncrementalZoneTransferRecords()`. |
 | `.gitignore` | `/node_modules/` and `/package-lock.json`, for the regression tests' jsdom install. |
 
 ## Syncing with upstream
@@ -80,8 +80,8 @@ git merge upstream/master        # or: git rebase upstream/master
 
 Conflicts should be rare and confined to the table above. After merging:
 
-1. Run the grep above and confirm all twelve `FORK` markers are still present and
-   still make sense. (Twelve markers, seventeen hunks: `.gitignore` and `APIDOCS.md`
+1. Run the grep above and confirm all sixteen `FORK` markers are still present and
+   still make sense. (Sixteen markers, twenty hunks: `.gitignore` and `APIDOCS.md`
    carry additions rather than marked edits, and three of the `AuthZoneManager.cs`
    hunks are calls to `IsRootZoneGlue()`, found by searching for that name.)
 2. Check the anchors the fork depends on still exist. `js/ux.js` injects its
@@ -182,8 +182,8 @@ changes arrive by IXFR, which carries only the change itself.
 
 `tools/test-root-zone-sync.py <image>` checks it on a two-node Docker setup
 (custom root Primary, `.` Forwarder through a Catalog, and a normal zone, over
-AXFR, IXFR and Resync). Upstream's build fails 7 of its 26 checks, the fixed
-build passes all of them. When the fix went in, two more checks were run by
+AXFR, IXFR and Resync). Upstream's build fails 7 of the 26 checks in those
+sections, the fixed build passes all of them. When the fix went in, two more checks were run by
 hand. The real IANA root zone was transferred into both builds with ZONEMD
 validation on, and the resulting 27,939-record AXFR was byte-identical with
 matching referrals. A secondary synced by upstream's build was also recreated
@@ -197,6 +197,43 @@ it is still filed as glue. A Resync of the zone corrects it.
 If upstream fixes this, the merge conflicts on those hunks. Take upstream's
 side, drop the two helpers, this section and the `EXPECTED_MARKERS` entry, and
 rerun the test script against the merged image.
+
+### A zone transfer fails when the secondary hosts a zone below it
+
+A secondary can host a zone of its own below a zone it transfers. In a cluster
+this happens when a node keeps a local reverse zone, such as
+`70.23.172.in-addr.arpa`, while `.` comes from the cluster catalog. If the
+transferred zone has a name inside that local zone, upstream's
+`GetOrAddSubDomainZone()` throws `The domain name '...' does not belong to the
+zone:`. One such name aborts the whole AXFR or IXFR, so the secondary keeps its
+old copy and retries forever. Routine IXFRs only fail when they carry such a
+name, so the fault can stay hidden until the next Resync.
+
+The fork routes the three `GetOrAddSubDomainZone()` calls in
+`SyncZoneTransferRecords()` and `SyncIncrementalZoneTransferRecords()` through
+`GetOrAddSubDomainZoneForZoneTransfer()`. That helper calls upstream's method
+unchanged, so every name upstream accepts is stored exactly as before,
+including the parent side of a delegation to the local zone. Only when the
+method throws and the name lies inside another zone on the same server, below
+the transferred one, does the helper skip the name and log `DNS Server skipped
+the name '...' in a zone transfer for zone '...'`. Any other error still
+aborts the transfer.
+
+Skipping changes nothing that is served, because the local zone answers for
+those names anyway. The secondary's copy of the zone does lack them, though.
+If the local zone is later deleted, run a Resync of the transferred zone to
+fetch them. The same applies to servers that transfer the zone from this
+secondary.
+
+`tools/test-root-zone-sync.py` covers it with 14 checks in two sections: a
+local reverse zone under a catalog `.` (IXFR adds and deletes, Resync, and a
+restart that reloads the saved zone files), and a normal zone that delegates
+to a zone the secondary hosts (AXFR and IXFR, with the parent-side NS kept).
+Upstream's build fails 8 of them and the earlier fork build 7. With the fix the
+script passes all 40 of its checks.
+
+If upstream fixes this, take its side of the conflict, drop the helper, this
+section and four of the seven `EXPECTED_MARKERS`.
 
 ### Web console
 
